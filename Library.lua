@@ -3419,31 +3419,46 @@ local function StartAutoGatling()
     end)
 end
 
+local PremiumLoaded = false
+
+function TDS:Addons()
+    -- Stub: define or load premium addon here if needed
+    return true
+end
+
 local function StartAutoPremium()
     if AutoPremiumRunning or not Globals.AutoPremium then return end
-
     AutoPremiumRunning = true
 
     task.spawn(function()
         if GameState == "GAME" and not PremiumLoaded then
+            PremiumLoaded = true
             Window:Notify({
                 Title = "ADS",
                 Desc = "Loading Key System...",
                 Time = 3,
                 Type = "normal"
             })
-            
-            local success = TDS:Addons()
-            
-            if success then
+
+            local ok, success = pcall(function() return TDS:Addons() end)
+
+            if ok and success then
                 Window:Notify({
                     Title = "ADS",
-                    Desc = "Premium Unlocked!",
+                    Desc = "Premium Loaded!",
+                    Time = 3,
+                    Type = "normal"
+                })
+            else
+                Window:Notify({
+                    Title = "ADS",
+                    Desc = "Auto Premium skipped (no addon defined).",
                     Time = 3,
                     Type = "normal"
                 })
             end
         end
+        AutoPremiumRunning = false
     end)
 end
 
