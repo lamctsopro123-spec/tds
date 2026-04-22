@@ -2836,17 +2836,19 @@ end
 
 local function DoPlaceTower(TName, TPos)
     Logger:Log("Placing tower: " .. TName)
-    while true do
+    local StartTime = os.clock()
+    while os.clock() - StartTime < 10 do
         local ok, res = pcall(function()
             return RemoteFunc:InvokeServer("Troops", "Pl\208\176ce", {
                 Rotation = CFrame.new(),
                 Position = TPos
             }, TName)
         end)
-
         if ok and CheckResOk(res) then return true end
         task.wait(0.25)
     end
+    Logger:Log("FAILED to place: " .. TName .. " (timed out)")
+    return false
 end
 
 local function DoUpgradeTower(TObj, PathId)
@@ -3229,34 +3231,37 @@ function TDS:Place(TName, px, py, pz, ...)
 
     local existing = {}
     for _, child in ipairs(workspace.Towers:GetChildren()) do
-        for _, SubChild in ipairs(child:GetChildren()) do
-            if SubChild.Name == "Owner" and SubChild.Value == LocalPlayer.UserId then
-                existing[child] = true
-                break
-            end
+        local rep = child:FindFirstChild("TowerReplicator")
+        local ownerChild = child:FindFirstChild("Owner")
+        if (rep and rep:GetAttribute("OwnerId") == LocalPlayer.UserId)
+        or (ownerChild and ownerChild.Value == LocalPlayer.UserId) then
+            existing[child] = true
         end
     end
 
     DoPlaceTower(TName, Vector3.new(px, py, pz))
 
     local NewT
+    local PlaceStart = os.clock()
     repeat
         for _, child in ipairs(workspace.Towers:GetChildren()) do
             if not existing[child] then
-                for _, SubChild in ipairs(child:GetChildren()) do
-                    if SubChild.Name == "Owner" and SubChild.Value == LocalPlayer.UserId then
-                        NewT = child
-                        break
-                    end
+                local rep = child:FindFirstChild("TowerReplicator")
+                local ownerChild = child:FindFirstChild("Owner")
+                if (rep and rep:GetAttribute("OwnerId") == LocalPlayer.UserId)
+                or (ownerChild and ownerChild.Value == LocalPlayer.UserId) then
+                    NewT = child
+                    break
                 end
             end
-            if NewT then break end
         end
         task.wait(0.05)
-    until NewT
+    until NewT or os.clock() - PlaceStart > 10
 
-    table.insert(self.PlacedTowers, NewT)
-    return #self.PlacedTowers
+    if not NewT then
+        Logger:Log("WARNING: Could not detect placed tower, skipping index")
+        return #self.PlacedTowers
+    end
 end
 
 function TDS:Upgrade(idx, PId)
