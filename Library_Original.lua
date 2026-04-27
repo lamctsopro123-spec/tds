@@ -2963,13 +2963,26 @@ end
 
 -- // public api
 -- lobby
-function TDS:Mode(difficulty)
+function TDS:Mode(difficulty, code)
     if GameState ~= "LOBBY" then 
         return false 
     end
 
+    if code ~= nil and not MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, 10518590) then
+        local ServerType = game:GetService('RobloxReplicatedStorage').GetServerType:InvokeServer()
+        
+        if ServerType ~= "VIPServer" then
+            local args = {
+                placeId = game.PlaceId, 
+                linkCode = tostring(code)
+            }
+            game:GetService("ExperienceService"):LaunchExperience(args)
+            return true
+        end
+    end
+
     if difficulty == "Trial" then
-        local Elevators = workspace:WaitForChild("Elevators")
+        local Elevators = workspace:WaitForChild("TrialElevators")
         local Network = ReplicatedStorage:WaitForChild("Network")
         
         if Elevators and Network then
@@ -2977,7 +2990,7 @@ function TDS:Mode(difficulty)
             
             repeat
                 for _, v in pairs(Elevators:GetChildren()) do
-                    if v.Name:match("Trial") or v.Name:match("Event") then
+                    if v.Name:match("Elevator") then
                         targetElevator = v
                         break
                     end
