@@ -2972,11 +2972,7 @@ function TDS:Mode(difficulty, code)
         local ServerType = game:GetService('RobloxReplicatedStorage').GetServerType:InvokeServer()
         
         if ServerType ~= "VIPServer" then
-            local args = {
-                placeId = game.PlaceId, 
-                reservedServerAccessCode = tostring(code)
-            }
-            game:GetService("ExperienceService"):LaunchExperience(args)
+            TeleportService:TeleportToPrivateServer(game.PlaceId, tostring(code))
             return true
         end
     end
