@@ -2972,7 +2972,11 @@ function TDS:Mode(difficulty, code)
         local ServerType = game:GetService('RobloxReplicatedStorage').GetServerType:InvokeServer()
         
         if ServerType ~= "VIPServer" then
-            TeleportService:TeleportToPrivateServer(game.PlaceId, tostring(code))
+            local args = {
+                placeId = game.PlaceId, 
+                linkCode = tostring(code)
+            }
+            game:GetService("ExperienceService"):LaunchExperience(args)
             return true
         end
     end
@@ -3060,7 +3064,7 @@ function TDS:Loadout(...)
     end
 
     local towers = {...}
-    local remote = game:GetService("ReplicatedStorage"):WaitForChild("RemoteFunction")
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvent")
     local StateReplicators = ReplicatedStorage:FindFirstChild("StateReplicators")
 
     local CurrentlyEquipped = {}
@@ -3088,7 +3092,7 @@ function TDS:Loadout(...)
             local UnequipDone = false
             repeat
                 local ok = pcall(function()
-                    remote:InvokeServer("Inventory", "Unequip", "tower", CurrentTower)
+                    remote:FireServer("Inventory", "Unequip", "Tower", CurrentTower)
                     task.wait(0.3)
                 end)
                 if ok then UnequipDone = true else task.wait(0.2) end
@@ -3103,7 +3107,7 @@ function TDS:Loadout(...)
             local EquipSuccess = false
             repeat
                 local ok = pcall(function()
-                    remote:InvokeServer("Inventory", "Equip", "tower", TowerName)
+                    remote:FireServer("Inventory", "Equip", "Tower", TowerName)
                     Logger:Log("Equipped tower: " .. TowerName)
                     task.wait(0.3)
                 end)
@@ -3115,7 +3119,6 @@ function TDS:Loadout(...)
     task.wait(0.5)
     return true
 end
-
 -- ingame
 function TDS:VoteSkip(StartWave, EndWave)
     task.spawn(function()
