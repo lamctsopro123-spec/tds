@@ -2974,7 +2974,7 @@ function TDS:Mode(difficulty, code)
         if ServerType ~= "VIPServer" then
             local args = {
                 placeId = game.PlaceId, 
-                linkCode = tostring(code)
+                reservedServerAccessCode = tostring(code)
             }
             game:GetService("ExperienceService"):LaunchExperience(args)
             return true
