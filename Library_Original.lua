@@ -73,20 +73,12 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    local CoreGui = game:GetService("CoreGui")
-    local overlay = CoreGui:WaitForChild("RobloxPromptGui"):WaitForChild("promptOverlay")
 
-    overlay.ChildAdded:Connect(function(child)
-        if child.Name == 'ErrorPrompt' then
-            while true do
-                TeleportService:Teleport(3260590327)
-                task.wait(5)
-            end
-        end
-    end)
-end)
 
-task.spawn(function()
+
+
+
+
     pcall(function()
         RemoteFunc:InvokeServer("Settings", "Update", "Show Nametags", false)
     end)
@@ -149,6 +141,7 @@ local SellFarmsRunning = false
 local AutoGatlingRunning = false
 local GatlingExecuted = false
 local AutoPremiumRunning = false
+local StackerErrorShown = false
 
 local MaxPathDistance = 300 -- default
 local MilMarker = nil
@@ -3119,6 +3112,7 @@ function TDS:Loadout(...)
     task.wait(0.5)
     return true
 end
+
 -- ingame
 function TDS:VoteSkip(StartWave, EndWave)
     task.spawn(function()
@@ -3177,7 +3171,7 @@ function TDS:GameInfo(name, list)
 
     CastModifierVote(modifiers)
 
-    if MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, 10518590) then
+    if MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, 10518590) or game:GetService("ReplicatedStorage").StateReplicators.GameStateReplicator:GetAttribute("IsPrivateServer") == true then
         SelectMapOverride(name, "vip")
         Logger:Log("Selected map: " .. name)
         repeat task.wait(1) until PlayerGui:FindFirstChild("ReactUniversalHotbar")
