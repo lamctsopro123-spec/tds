@@ -1045,12 +1045,18 @@ local Window = Library:Window({
 })
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+    local AlwaysAllow = FKeyMap[input.KeyCode] ~= nil
+        or input.KeyCode == Enum.KeyCode.LeftAlt
+        or input.KeyCode == Enum.KeyCode.RightAlt
+
+    if gameProcessed and not AlwaysAllow then return end
 
     -- Alt toggles stacker
     if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
         StackEnabled = not StackEnabled
         Globals.StackEnabled = StackEnabled
+        if StackerToggleRef then StackerToggleRef:SetValue(StackEnabled) end
+        UpdateStackerLabel()
 
         if StackEnabled then
             Window:Notify({
@@ -1076,7 +1082,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     local slotIndex = FKeyMap[input.KeyCode]
     if slotIndex == "mercenary" then
         Globals.AutoMercenary = not Globals.AutoMercenary
-SaveSettings()
+        SaveSettings()
+        if MercenaryToggleRef then MercenaryToggleRef:SetValue(Globals.AutoMercenary) end
 
         if Globals.AutoMercenary then
             AutoMercenaryBaseRunning = false  -- allow restart
@@ -1115,6 +1122,7 @@ SaveSettings()
             })
         end
         UpdateStackerLabel()
+        print("Slot 4 tower: ", CurrentEquippedTowers[4])
     end
 end)
 
@@ -1200,7 +1208,7 @@ local Automation = Window:Tab({Title = "Automation", Icon = "bot"}) do
         end
     })
 
-    Automation:Toggle({
+    local MercenaryToggleRef = Automation:Toggle({
         Title = "Auto Mercenary Base",
         Desc = "Uses Air-Drop Ability",
         Value = Globals.AutoMercenary,
@@ -1358,13 +1366,14 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         end
     end)
 
-    Interactive:Toggle({
+    local StackerToggleRef = Interactive:Toggle({
         Title = "Stack Tower",
         Desc = "Enables Stacking placement",
         Value = false,
         Callback = function(v)
             StackEnabled = v
             Globals.StackEnabled = v
+            UpdateStackerLabel()
 
             if StackEnabled then
                 Window:Notify({
