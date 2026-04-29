@@ -200,79 +200,7 @@ local FKeyMap = {
     [Enum.KeyCode.F6] = "mercenary",
 }
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
 
-    -- Alt toggles stacker
-    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
-        StackEnabled = not StackEnabled
-        Globals.StackEnabled = StackEnabled
-
-        if StackEnabled then
-            Window:Notify({
-                Title = "Stacker",
-                Desc = "Stacker ENABLED. Use F1–F5 to pick a tower slot.",
-                Time = 3,
-                Type = "normal"
-            })
-        else
-            Window:Notify({
-                Title = "Stacker",
-                Desc = "Stacker DISABLED.",
-                Time = 2,
-                Type = "normal"
-            })
-        end
-
-        UpdateStackerLabel()
-        return
-    end
-
-    -- F1-F5 selects tower slot
-    local slotIndex = FKeyMap[input.KeyCode]
-    if slotIndex == "mercenary" then
-        Globals.AutoMercenary = not Globals.AutoMercenary
-        SetSetting("AutoMercenary", Globals.AutoMercenary)
-
-        if Globals.AutoMercenary then
-            AutoMercenaryBaseRunning = false  -- allow restart
-            StartAutoMercenary()
-            Window:Notify({
-                Title = "Auto Mercenary",
-                Desc = "Auto Mercenary Base ENABLED.",
-                Time = 2,
-                Type = "normal"
-            })
-        else
-            Window:Notify({
-                Title = "Auto Mercenary",
-                Desc = "Auto Mercenary Base DISABLED.",
-                Time = 2,
-                Type = "normal"
-            })
-        end
-
-    elseif type(slotIndex) == "number" then
-        local towers = CurrentEquippedTowers
-        if towers and towers[slotIndex] and towers[slotIndex] ~= "None" then
-            SelectedTower = towers[slotIndex]
-            Window:Notify({
-                Title = "Stacker",
-                Desc = "Selected slot " .. slotIndex .. ": " .. SelectedTower,
-                Time = 2,
-                Type = "normal"
-            })
-        else
-            Window:Notify({
-                Title = "Stacker",
-                Desc = "Slot " .. slotIndex .. " is empty.",
-                Time = 2,
-                Type = "error"
-            })
-        end
-        UpdateStackerLabel()
-    end
-end)
 
 local AllModifiers = {
     "HiddenEnemies", "Glass", "ExplodingEnemies", "Limitation", 
@@ -1115,6 +1043,80 @@ local Window = Library:Window({
         Size = UDim2.new(0, 500, 0, 400)
     }
 })
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    -- Alt toggles stacker
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        StackEnabled = not StackEnabled
+        Globals.StackEnabled = StackEnabled
+
+        if StackEnabled then
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Stacker ENABLED. Use F1–F5 to pick a tower slot.",
+                Time = 3,
+                Type = "normal"
+            })
+        else
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Stacker DISABLED.",
+                Time = 2,
+                Type = "normal"
+            })
+        end
+
+        UpdateStackerLabel()
+        return
+    end
+
+    -- F1-F5 selects tower slot
+    local slotIndex = FKeyMap[input.KeyCode]
+    if slotIndex == "mercenary" then
+        Globals.AutoMercenary = not Globals.AutoMercenary
+SaveSettings()
+
+        if Globals.AutoMercenary then
+            AutoMercenaryBaseRunning = false  -- allow restart
+            StartAutoMercenary()
+            Window:Notify({
+                Title = "Auto Mercenary",
+                Desc = "Auto Mercenary Base ENABLED.",
+                Time = 2,
+                Type = "normal"
+            })
+        else
+            Window:Notify({
+                Title = "Auto Mercenary",
+                Desc = "Auto Mercenary Base DISABLED.",
+                Time = 2,
+                Type = "normal"
+            })
+        end
+
+    elseif type(slotIndex) == "number" then
+        local towers = CurrentEquippedTowers
+        if towers and towers[slotIndex] and towers[slotIndex] ~= "None" then
+            SelectedTower = towers[slotIndex]
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Selected slot " .. slotIndex .. ": " .. SelectedTower,
+                Time = 2,
+                Type = "normal"
+            })
+        else
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Slot " .. slotIndex .. " is empty.",
+                Time = 2,
+                Type = "error"
+            })
+        end
+        UpdateStackerLabel()
+    end
+end)
 
 local Automation = Window:Tab({Title = "Automation", Icon = "bot"}) do
     
