@@ -197,6 +197,7 @@ local FKeyMap = {
     [Enum.KeyCode.F3] = 3,
     [Enum.KeyCode.F4] = 4,
     [Enum.KeyCode.F5] = 5,
+    [Enum.KeyCode.F6] = "mercenary",
 }
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -229,7 +230,29 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     -- F1-F5 selects tower slot
     local slotIndex = FKeyMap[input.KeyCode]
-    if slotIndex then
+    if slotIndex == "mercenary" then
+        Globals.AutoMercenary = not Globals.AutoMercenary
+        SetSetting("AutoMercenary", Globals.AutoMercenary)
+
+        if Globals.AutoMercenary then
+            AutoMercenaryBaseRunning = false  -- allow restart
+            StartAutoMercenary()
+            Window:Notify({
+                Title = "Auto Mercenary",
+                Desc = "Auto Mercenary Base ENABLED.",
+                Time = 2,
+                Type = "normal"
+            })
+        else
+            Window:Notify({
+                Title = "Auto Mercenary",
+                Desc = "Auto Mercenary Base DISABLED.",
+                Time = 2,
+                Type = "normal"
+            })
+        end
+
+    elseif type(slotIndex) == "number" then
         local towers = CurrentEquippedTowers
         if towers and towers[slotIndex] and towers[slotIndex] ~= "None" then
             SelectedTower = towers[slotIndex]
