@@ -153,6 +153,104 @@ local StackEnabled = false
 local SelectedTower = nil
 local StackSphere = nil
 
+local StackerGui = Instance.new("ScreenGui")
+StackerGui.Name = "ADS_StackerLabel"
+StackerGui.ResetOnSpawn = false
+StackerGui.IgnoreGuiInset = true
+StackerGui.DisplayOrder = 999
+StackerGui.Parent = PlayerGui
+
+local StackerLabel = Instance.new("TextLabel")
+StackerLabel.Name = "StackerStatus"
+StackerLabel.Size = UDim2.new(0, 260, 0, 44)
+StackerLabel.Position = UDim2.new(0, 10, 0, 10)
+StackerLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+StackerLabel.BackgroundTransparency = 0.3
+StackerLabel.BorderSizePixel = 0
+StackerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StackerLabel.Font = Enum.Font.GothamBold
+StackerLabel.TextSize = 14
+StackerLabel.TextXAlignment = Enum.TextXAlignment.Left
+StackerLabel.Text = "  🗼 Stacker: OFF  |  Tower: None"
+StackerLabel.Visible = true
+StackerLabel.Parent = StackerGui
+
+local StackerCorner = Instance.new("UICorner")
+StackerCorner.CornerRadius = UDim.new(0, 6)
+StackerCorner.Parent = StackerLabel
+
+local function UpdateStackerLabel()
+    local status = StackEnabled and "✅ ON" or "❌ OFF"
+    local towerName = SelectedTower or "None"
+    StackerLabel.Text = "  🗼 Stacker: " .. status .. "  |  Tower: " .. towerName
+    StackerLabel.TextColor3 = StackEnabled
+        and Color3.fromRGB(100, 255, 130)
+        or Color3.fromRGB(200, 200, 200)
+end
+
+UpdateStackerLabel()
+
+-- // stacker keybinds: Alt = toggle, F1-F5 = select tower slot
+local FKeyMap = {
+    [Enum.KeyCode.F1] = 1,
+    [Enum.KeyCode.F2] = 2,
+    [Enum.KeyCode.F3] = 3,
+    [Enum.KeyCode.F4] = 4,
+    [Enum.KeyCode.F5] = 5,
+}
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    -- Alt toggles stacker
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        StackEnabled = not StackEnabled
+        Globals.StackEnabled = StackEnabled
+
+        if StackEnabled then
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Stacker ENABLED. Use F1–F5 to pick a tower slot.",
+                Time = 3,
+                Type = "normal"
+            })
+        else
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Stacker DISABLED.",
+                Time = 2,
+                Type = "normal"
+            })
+        end
+
+        UpdateStackerLabel()
+        return
+    end
+
+    -- F1-F5 selects tower slot
+    local slotIndex = FKeyMap[input.KeyCode]
+    if slotIndex then
+        local towers = CurrentEquippedTowers
+        if towers and towers[slotIndex] and towers[slotIndex] ~= "None" then
+            SelectedTower = towers[slotIndex]
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Selected slot " .. slotIndex .. ": " .. SelectedTower,
+                Time = 2,
+                Type = "normal"
+            })
+        else
+            Window:Notify({
+                Title = "Stacker",
+                Desc = "Slot " .. slotIndex .. " is empty.",
+                Time = 2,
+                Type = "error"
+            })
+        end
+        UpdateStackerLabel()
+    end
+end)
+
 local AllModifiers = {
     "HiddenEnemies", "Glass", "ExplodingEnemies", "Limitation", 
     "Committed", "HealthyEnemies", "Fog", "FlyingEnemies", 
@@ -2271,6 +2369,7 @@ RunService.RenderStepped:Connect(function()
     end
 
     UpdatePathVisuals()
+    UpdateStackerLabel()
 end)
 
 mouse.Button1Down:Connect(function()
