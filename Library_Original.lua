@@ -200,6 +200,9 @@ local FKeyMap = {
     [Enum.KeyCode.F6] = "mercenary",
 }
 
+local StackerToggleRef = nil
+local MercenaryToggleRef = nil
+
 
 
 local AllModifiers = {
@@ -1087,7 +1090,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
         if Globals.AutoMercenary then
             AutoMercenaryBaseRunning = false  -- allow restart
-            StartAutoMercenary()
             Window:Notify({
                 Title = "Auto Mercenary",
                 Desc = "Auto Mercenary Base ENABLED.",
@@ -1208,7 +1210,7 @@ local Automation = Window:Tab({Title = "Automation", Icon = "bot"}) do
         end
     })
 
-    local MercenaryToggleRef = Automation:Toggle({
+    MercenaryToggleRef = Automation:Toggle({
         Title = "Auto Mercenary Base",
         Desc = "Uses Air-Drop Ability",
         Value = Globals.AutoMercenary,
@@ -1366,7 +1368,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         end
     end)
 
-    local StackerToggleRef = Interactive:Toggle({
+    StackerToggleRef = Interactive:Toggle({
         Title = "Stack Tower",
         Desc = "Enables Stacking placement",
         Value = false,
