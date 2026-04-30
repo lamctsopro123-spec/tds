@@ -3856,40 +3856,23 @@ local function StartAntiLag()
             if TowersFolder then
                 for _, tower in ipairs(TowersFolder:GetChildren()) do
                     local anims = tower:FindFirstChild("Animations")
-                    local projectiles = tower:FindFirstChild("Projectiles")
                     local weapon = tower:FindFirstChild("Weapon")
+                    local projectiles = tower:FindFirstChild("Projectiles")
 
-                    -- Safe to fully destroy these, no UI refs
                     if anims then anims:Destroy() end
                     if projectiles then projectiles:Destroy() end
-
-                    -- Only clean inside Weapon, don't destroy Weapon itself
-                    -- Destroying Weapon breaks ClickDetector and UI
-                    if weapon then
-                        for _, child in ipairs(weapon:GetChildren()) do
-                            -- Keep ClickDetector and BillboardGui/SurfaceGui intact
-                            if not child:IsA("ClickDetector")
-                            and not child:IsA("BillboardGui")
-                            and not child:IsA("SurfaceGui")
-                            and not child:IsA("ProximityPrompt") then
-                                child:Destroy()
-                            end
-                        end
-                    end
+                    if weapon then weapon:Destroy() end
                 end
             end
-
             if ClientUnits then
                 for _, unit in ipairs(ClientUnits:GetChildren()) do
                     unit:Destroy()
                 end
             end
-
+            
             task.wait(0.5)
         end
-
         AntiLagRunning = false
-        settings.QualityLevel = OriginalQuality
     end)
 end
 
