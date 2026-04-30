@@ -1388,23 +1388,81 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         end
     })
 
+    local UpgradeTargetLevel = 0
+
+    Interactive:Textbox({
+        Title = "To Level",
+        Desc = "Target level to upgrade to (0 = no cap, upgrades once like normal)",
+        Placeholder = "0",
+        Value = "0",
+        ClearTextOnFocus = false,
+        Callback = function(text)
+            local num = tonumber(text)
+            if num and num >= 0 then
+                UpgradeTargetLevel = math.floor(num)
+            else
+                Window:Notify({
+                    Title = "ADS",
+                    Desc = "Invalid level! Enter a number (0 = no cap).",
+                    Time = 3,
+                    Type = "error"
+                })
+            end
+        end
+    })
+    
     Interactive:Button({
         Title = "Upgrade Selected",
         Desc = "",
         Callback = function()
-            if SelectedTower then
+            if not SelectedTower then return end
+    
+            local upgraded = 0
+            local skipped = 0
+    
+            task.spawn(function()
                 for _, v in pairs(workspace.Towers:GetChildren()) do
-                    if v:FindFirstChild("TowerReplicator") and v.TowerReplicator:GetAttribute("Name") == SelectedTower and v.TowerReplicator:GetAttribute("OwnerId") == LocalPlayer.UserId then
-                        RemoteFunc:InvokeServer("Troops", "Upgrade", "Set", {Troop = v})
+                    if v:FindFirstChild("TowerReplicator")
+                    and v.TowerReplicator:GetAttribute("Name") == SelectedTower
+                    and v.TowerReplicator:GetAttribute("OwnerId") == LocalPlayer.UserId then
+    
+                        if UpgradeTargetLevel == 0 then
+                            -- Original behavior: just upgrade once, no cap
+                            RemoteFunc:InvokeServer("Troops", "Upgrade", "Set", {Troop = v})
+                            upgraded += 1
+                        else
+                            local currentLevel = v.TowerReplicator:GetAttribute("Upgrade") or 0
+    
+                            if currentLevel >= UpgradeTargetLevel then
+                                -- Already at or past target level, skip
+                                skipped += 1
+                            else
+                                -- Upgrade step by step until target level
+                                for _ = currentLevel + 1, UpgradeTargetLevel do
+                                    -- Re-check each iteration in case tower got sold/destroyed
+                                    if not v or not v.Parent then break end
+                                    RemoteFunc:InvokeServer("Troops", "Upgrade", "Set", {Troop = v})
+                                    task.wait(0.15)
+                                end
+                                upgraded += 1
+                            end
+                        end
                     end
                 end
+    
+                local desc = "Upgraded " .. upgraded .. " tower(s)"
+                if skipped > 0 then
+                    desc = desc .. ", skipped " .. skipped .. " (already at level " .. UpgradeTargetLevel .. ")"
+                end
+                desc = desc .. "!"
+    
                 Window:Notify({
                     Title = "ADS",
-                    Desc = "Attempted to upgrade all the selected towers!",
-                    Time = 3,
+                    Desc = desc,
+                    Time = 4,
                     Type = "normal"
                 })
-            end
+            end)
         end
     })
 
