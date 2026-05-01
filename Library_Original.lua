@@ -1569,12 +1569,14 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         Title = "Apply DJ Music",
         Desc = "Applies the music ID to your placed DJ Booth",
         Callback = function()
-            local id = tonumber(Globals.DJMusicId)
-            if not id then
+            local raw = tostring(Globals.DJMusicId or ""):match("^%s*(.-)%s*$")
+            local id = tonumber(raw)
+    
+            if not id or raw == "" then
                 return Window:Notify({
                     Title = "DJ Booth",
-                    Desc = "No valid music ID set!",
-                    Time = 3,
+                    Desc = "No valid music ID set! Current value: '" .. tostring(Globals.DJMusicId) .. "'",
+                    Time = 5,
                     Type = "error"
                 })
             end
