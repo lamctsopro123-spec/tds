@@ -1606,6 +1606,191 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         end
     })
 
+    Interactive:Section({Title = "DJ Booth Emulator"})
+
+    local EmulatorPosition = nil
+    local EmulatorPart = nil
+    local PickingPosition = false
+    local PickIndicator = nil
+    
+    local PositionLabel = Interactive:Label({
+        Title = "Position: None",
+        Desc = "Click 'Pick Position' then click anywhere in the world"
+    })
+    
+    Interactive:Button({
+        Title = "Pick Position",
+        Desc = "Enter click mode to select where the emulator plays from",
+        Callback = function()
+            if PickingPosition then
+                PickingPosition = false
+                if PickIndicator then
+                    PickIndicator:Destroy()
+                    PickIndicator = nil
+                    mouse.TargetFilter = StackSphere -- restore original filter
+                end
+                Window:Notify({
+                    Title = "DJ Emulator",
+                    Desc = "Pick mode cancelled.",
+                    Time = 2,
+                    Type = "normal"
+                })
+                return
+            end
+    
+            PickingPosition = true
+    
+            -- visual sphere like stacker
+            PickIndicator = Instance.new("Part")
+            PickIndicator.Shape = Enum.PartType.Ball
+            PickIndicator.Size = Vector3.new(2, 2, 2)
+            PickIndicator.Color = Color3.fromRGB(0, 200, 255)
+            PickIndicator.Transparency = 0.4
+            PickIndicator.Anchored = true
+            PickIndicator.CanCollide = false
+            PickIndicator.Material = Enum.Material.Neon
+            PickIndicator.Parent = workspace
+            mouse.TargetFilter = PickIndicator
+    
+            Window:Notify({
+                Title = "DJ Emulator",
+                Desc = "Click anywhere in the world to set position.",
+                Time = 3,
+                Type = "normal"
+            })
+    
+            -- move indicator with mouse
+            local moveConn
+            moveConn = RunService.RenderStepped:Connect(function()
+                if not PickingPosition then
+                    moveConn:Disconnect()
+                    return
+                end
+                if PickIndicator and mouse.Hit then
+                    PickIndicator.Position = mouse.Hit.Position + Vector3.new(0, 1, 0)
+                end
+            end)
+    
+            -- one shot click
+            local clickConn
+            clickConn = mouse.Button1Down:Connect(function()
+                if not PickingPosition then
+                    clickConn:Disconnect()
+                    return
+                end
+    
+                EmulatorPosition = mouse.Hit.Position + Vector3.new(0, 1, 0)
+                PickingPosition = false
+    
+                if PickIndicator then
+                    PickIndicator:Destroy()
+                    PickIndicator = nil
+                end
+    
+                clickConn:Disconnect()
+                moveConn:Disconnect()
+    
+                local pos = EmulatorPosition
+                PositionLabel:SetTitle(
+                    "Position: (" .. math.round(pos.X) .. ", " .. math.round(pos.Y) .. ", " .. math.round(pos.Z) .. ")"
+                )
+    
+                Window:Notify({
+                    Title = "DJ Emulator",
+                    Desc = "Position saved!",
+                    Time = 2,
+                    Type = "normal"
+                })
+            end)
+        end
+    })
+    
+    Interactive:Button({
+        Title = "Play",
+        Desc = "Plays music at the picked position (client-side only, only you hear it)",
+        Callback = function()
+            if not EmulatorPosition then
+                return Window:Notify({
+                    Title = "DJ Emulator",
+                    Desc = "No position set! Click 'Pick Position' first.",
+                    Time = 3,
+                    Type = "error"
+                })
+            end
+    
+            -- stop previous if any
+            if EmulatorPart then
+                EmulatorPart:Destroy()
+                EmulatorPart = nil
+            end
+    
+            local defaultId = "89981571751747"
+            local rawId = tostring(Globals.DJMusicId or ""):match("^%s*(.-)%s*$")
+            local musicId = (rawId ~= "" and tonumber(rawId)) and rawId or defaultId
+    
+            -- build the part
+            local part = Instance.new("Part")
+            part.Name = "DJEmulator"
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 1
+            part.Size = Vector3.new(1, 1, 1)
+            part.Position = EmulatorPosition
+            part.Parent = workspace
+            EmulatorPart = part
+    
+            -- AudioPlayer
+            local audioPlayer = Instance.new("AudioPlayer")
+            audioPlayer.AssetId = "rbxassetid://" .. musicId
+            audioPlayer.Looping = true
+            audioPlayer.Volume = 1.2
+            audioPlayer.Parent = part
+    
+            -- AudioDeviceOutput (speaker)
+            local audioOutput = Instance.new("AudioDeviceOutput")
+            audioOutput.Parent = part
+    
+            -- Wire connects AudioPlayer -> AudioDeviceOutput
+            local wire = Instance.new("Wire")
+            wire.SourceInstance = audioPlayer
+            wire.TargetInstance = audioOutput
+            wire.Parent = part
+    
+            audioPlayer:Play()
+    
+            Window:Notify({
+                Title = "DJ Emulator",
+                Desc = "Playing music ID: " .. musicId .. (musicId == defaultId and " (default)" or ""),
+                Time = 3,
+                Type = "normal"
+            })
+        end
+    })
+    
+    Interactive:Button({
+        Title = "Stop",
+        Desc = "Stops the emulator",
+        Callback = function()
+            if EmulatorPart then
+                EmulatorPart:Destroy()
+                EmulatorPart = nil
+                Window:Notify({
+                    Title = "DJ Emulator",
+                    Desc = "Emulator stopped.",
+                    Time = 2,
+                    Type = "normal"
+                })
+            else
+                Window:Notify({
+                    Title = "DJ Emulator",
+                    Desc = "Nothing is playing.",
+                    Time = 2,
+                    Type = "error"
+                })
+            end
+        end
+    })
+
     Interactive:Section({Title = "DJ Booth"})
 
     local DJTrackMap = {
