@@ -1692,7 +1692,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         Desc = "Plays music at the picked position",
         Callback = function()
             if not EmulatorPosition then
-                return Window:Notify({Title = "DJ Emulator", Desc = "No position set! Click 'Pick Position' first.", Time = 3, Type = "error"})
+                return Window:Notify({Title = "DJ Emulator", Desc = "No position set!", Time = 3, Type = "error"})
             end
     
             if EmulatorPart then
@@ -1704,6 +1704,9 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             local rawId = tostring(Globals.DJMusicId or ""):match("^%s*(.-)%s*$")
             local musicId = (rawId ~= "" and tonumber(rawId)) and rawId or defaultId
     
+            Window:Notify({Title = "DEBUG 1", Desc = "Starting play, mode: " .. tostring(EmulatorPlayMode) .. " | ID: " .. musicId, Time = 5, Type = "normal"})
+    
+            -- Create source part
             local part = Instance.new("Part")
             part.Name = "DJEmulator"
             part.Anchored = true
@@ -1714,81 +1717,134 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             part.Parent = workspace
             EmulatorPart = part
     
+            Window:Notify({Title = "DEBUG 2", Desc = "Part created at " .. tostring(EmulatorPosition), Time = 5, Type = "normal"})
+    
+            -- Create AudioPlayer
             local audioPlayer = Instance.new("AudioPlayer")
             audioPlayer.AssetId = "rbxassetid://" .. musicId
             audioPlayer.Looping = true
             audioPlayer.Volume = 1.2
             audioPlayer.Parent = part
     
+            Window:Notify({Title = "DEBUG 3", Desc = "AudioPlayer created. AssetId: " .. audioPlayer.AssetId, Time = 5, Type = "normal"})
+    
             if EmulatorPlayMode == "Spatial (Real DJ)" then
-                -- Step 1: AudioEmitter on the source part
-                local audioEmitter = Instance.new("AudioEmitter")
-                audioEmitter.Parent = part
     
-                local wireSource = Instance.new("Wire")
-                wireSource.SourceInstance = audioPlayer
-                wireSource.TargetInstance = audioEmitter
-                wireSource.Parent = part
-    
-                -- Step 2: AudioListener on HumanoidRootPart + wire it to AudioDeviceOutput
+                -- Check character
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    
                 if not hrp then
                     EmulatorPart:Destroy()
                     EmulatorPart = nil
-                    return Window:Notify({Title = "DJ Emulator", Desc = "Character not found!", Time = 3, Type = "error"})
+                    return Window:Notify({Title = "DEBUG ERR", Desc = "HumanoidRootPart not found!", Time = 5, Type = "error"})
+                end
+                Window:Notify({Title = "DEBUG 4", Desc = "HRP found: " .. hrp:GetFullName(), Time = 5, Type = "normal"})
+    
+                -- Cleanup old
+                for _, name in ipairs({"DJEmulatorListener", "DJEmulatorOutput", "DJEmulatorWire"}) do
+                    local old = hrp:FindFirstChild(name)
+                    if old then old:Destroy() end
                 end
     
-                -- Remove old listener/output we created before to avoid duplicates
-                local oldListener = hrp:FindFirstChild("DJEmulatorListener")
-                if oldListener then oldListener:Destroy() end
-                local oldOutput = hrp:FindFirstChild("DJEmulatorOutput")
-                if oldOutput then oldOutput:Destroy() end
-                local oldWire = hrp:FindFirstChild("DJEmulatorWire")
-                if oldWire then oldWire:Destroy() end
+                -- AudioEmitter on part
+                local ok1, audioEmitter = pcall(function()
+                    local e = Instance.new("AudioEmitter")
+                    e.Parent = part
+                    return e
+                end)
+                if not ok1 then
+                    return Window:Notify({Title = "DEBUG ERR", Desc = "AudioEmitter failed: " .. tostring(audioEmitter), Time = 8, Type = "error"})
+                end
+                Window:Notify({Title = "DEBUG 5", Desc = "AudioEmitter created OK", Time = 5, Type = "normal"})
     
-                local audioListener = Instance.new("AudioListener")
-                audioListener.Name = "DJEmulatorListener"
-                audioListener.Parent = hrp
+                -- Wire: AudioPlayer -> AudioEmitter
+                local ok2, err2 = pcall(function()
+                    local w = Instance.new("Wire")
+                    w.SourceInstance = audioPlayer
+                    w.TargetInstance = audioEmitter
+                    w.Parent = part
+                end)
+                if not ok2 then
+                    return Window:Notify({Title = "DEBUG ERR", Desc = "Wire1 failed: " .. tostring(err2), Time = 8, Type = "error"})
+                end
+                Window:Notify({Title = "DEBUG 6", Desc = "Wire AudioPlayer->AudioEmitter OK", Time = 5, Type = "normal"})
     
-                local audioOutput = Instance.new("AudioDeviceOutput")
-                audioOutput.Name = "DJEmulatorOutput"
-                audioOutput.Parent = hrp
+                -- AudioListener on HRP
+                local ok3, audioListener = pcall(function()
+                    local l = Instance.new("AudioListener")
+                    l.Name = "DJEmulatorListener"
+                    l.Parent = hrp
+                    return l
+                end)
+                if not ok3 then
+                    return Window:Notify({Title = "DEBUG ERR", Desc = "AudioListener failed: " .. tostring(audioListener), Time = 8, Type = "error"})
+                end
+                Window:Notify({Title = "DEBUG 7", Desc = "AudioListener created OK on HRP", Time = 5, Type = "normal"})
     
-                local wireListener = Instance.new("Wire")
-                wireListener.Name = "DJEmulatorWire"
-                wireListener.SourceInstance = audioListener
-                wireListener.TargetInstance = audioOutput
-                wireListener.Parent = hrp
+                -- AudioDeviceOutput on HRP
+                local ok4, audioOutput = pcall(function()
+                    local o = Instance.new("AudioDeviceOutput")
+                    o.Name = "DJEmulatorOutput"
+                    o.Parent = hrp
+                    return o
+                end)
+                if not ok4 then
+                    return Window:Notify({Title = "DEBUG ERR", Desc = "AudioDeviceOutput failed: " .. tostring(audioOutput), Time = 8, Type = "error"})
+                end
+                Window:Notify({Title = "DEBUG 8", Desc = "AudioDeviceOutput created OK on HRP", Time = 5, Type = "normal"})
     
-                -- Cleanup listener when emulator part is destroyed
+                -- Wire: AudioListener -> AudioDeviceOutput
+                local ok5, err5 = pcall(function()
+                    local w = Instance.new("Wire")
+                    w.Name = "DJEmulatorWire"
+                    w.SourceInstance = audioListener
+                    w.TargetInstance = audioOutput
+                    w.Parent = hrp
+                end)
+                if not ok5 then
+                    return Window:Notify({Title = "DEBUG ERR", Desc = "Wire2 failed: " .. tostring(err5), Time = 8, Type = "error"})
+                end
+                Window:Notify({Title = "DEBUG 9", Desc = "Wire AudioListener->AudioDeviceOutput OK", Time = 5, Type = "normal"})
+    
+                -- Cleanup on stop
                 part.AncestryChanged:Connect(function()
                     if not part.Parent then
-                        if audioListener and audioListener.Parent then audioListener:Destroy() end
-                        if audioOutput and audioOutput.Parent then audioOutput:Destroy() end
-                        if wireListener and wireListener.Parent then wireListener:Destroy() end
+                        for _, name in ipairs({"DJEmulatorListener", "DJEmulatorOutput", "DJEmulatorWire"}) do
+                            local obj = hrp and hrp:FindFirstChild(name)
+                            if obj then obj:Destroy() end
+                        end
                     end
                 end)
+    
             else
-                -- Normal flat audio
                 local audioOutput = Instance.new("AudioDeviceOutput")
                 audioOutput.Parent = part
-    
                 local wire = Instance.new("Wire")
                 wire.SourceInstance = audioPlayer
                 wire.TargetInstance = audioOutput
                 wire.Parent = part
+                Window:Notify({Title = "DEBUG 4", Desc = "Normal mode wired OK", Time = 5, Type = "normal"})
             end
     
-            audioPlayer:Play()
+            -- Play and check IsPlaying after a moment
+            local ok6, err6 = pcall(function() audioPlayer:Play() end)
+            if not ok6 then
+                return Window:Notify({Title = "DEBUG ERR", Desc = "audioPlayer:Play() failed: " .. tostring(err6), Time = 8, Type = "error"})
+            end
+            Window:Notify({Title = "DEBUG 10", Desc = "Play() called OK", Time = 5, Type = "normal"})
     
-            Window:Notify({
-                Title = "DJ Emulator",
-                Desc = "Playing [" .. EmulatorPlayMode .. "] ID: " .. musicId .. (musicId == defaultId and " (default)" or ""),
-                Time = 3,
-                Type = "normal"
-            })
+            task.delay(2, function()
+                if audioPlayer and audioPlayer.Parent then
+                    Window:Notify({
+                        Title = "DEBUG 11 (2s later)",
+                        Desc = "IsPlaying: " .. tostring(audioPlayer.IsPlaying) .. " | TimePosition: " .. string.format("%.2f", audioPlayer.TimePosition),
+                        Time = 8,
+                        Type = "normal"
+                    })
+                else
+                    Window:Notify({Title = "DEBUG 11", Desc = "AudioPlayer was destroyed before 2s check!", Time = 5, Type = "error"})
+                end
+            end)
         end
     })
     
