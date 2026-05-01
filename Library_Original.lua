@@ -1612,10 +1612,21 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
     local EmulatorPart = nil
     local PickingPosition = false
     local PickIndicator = nil
+    local EmulatorPlayMode = "Spatial (Real DJ)" -- default
     
     local PositionLabel = Interactive:Label({
         Title = "Position: None",
         Desc = "Click 'Pick Position' then click anywhere in the world"
+    })
+    
+    Interactive:Dropdown({
+        Title = "Play Mode",
+        Desc = "Normal = full volume everywhere | Spatial = volume fades with distance like real DJ Booth",
+        List = {"Normal", "Spatial (Real DJ)"},
+        Value = "Spatial (Real DJ)",
+        Callback = function(choice)
+            EmulatorPlayMode = type(choice) == "table" and choice[1] or choice
+        end
     })
     
     Interactive:Button({
@@ -1627,20 +1638,14 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                 if PickIndicator then
                     PickIndicator:Destroy()
                     PickIndicator = nil
-                    mouse.TargetFilter = StackSphere -- restore original filter
+                    mouse.TargetFilter = StackSphere
                 end
-                Window:Notify({
-                    Title = "DJ Emulator",
-                    Desc = "Pick mode cancelled.",
-                    Time = 2,
-                    Type = "normal"
-                })
+                Window:Notify({Title = "DJ Emulator", Desc = "Pick mode cancelled.", Time = 2, Type = "normal"})
                 return
             end
     
             PickingPosition = true
     
-            -- visual sphere like stacker
             PickIndicator = Instance.new("Part")
             PickIndicator.Shape = Enum.PartType.Ball
             PickIndicator.Size = Vector3.new(2, 2, 2)
@@ -1652,41 +1657,24 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             PickIndicator.Parent = workspace
             mouse.TargetFilter = PickIndicator
     
-            Window:Notify({
-                Title = "DJ Emulator",
-                Desc = "Click anywhere in the world to set position.",
-                Time = 3,
-                Type = "normal"
-            })
+            Window:Notify({Title = "DJ Emulator", Desc = "Click anywhere in the world to set position.", Time = 3, Type = "normal"})
     
-            -- move indicator with mouse
             local moveConn
             moveConn = RunService.RenderStepped:Connect(function()
-                if not PickingPosition then
-                    moveConn:Disconnect()
-                    return
-                end
+                if not PickingPosition then moveConn:Disconnect() return end
                 if PickIndicator and mouse.Hit then
                     PickIndicator.Position = mouse.Hit.Position + Vector3.new(0, 1, 0)
                 end
             end)
     
-            -- one shot click
             local clickConn
             clickConn = mouse.Button1Down:Connect(function()
-                if not PickingPosition then
-                    clickConn:Disconnect()
-                    return
-                end
+                if not PickingPosition then clickConn:Disconnect() return end
     
                 EmulatorPosition = mouse.Hit.Position + Vector3.new(0, 1, 0)
                 PickingPosition = false
     
-                if PickIndicator then
-                    PickIndicator:Destroy()
-                    PickIndicator = nil
-                end
-    
+                if PickIndicator then PickIndicator:Destroy() PickIndicator = nil end
                 clickConn:Disconnect()
                 moveConn:Disconnect()
     
@@ -1694,31 +1682,19 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                 PositionLabel:SetTitle(
                     "Position: (" .. math.round(pos.X) .. ", " .. math.round(pos.Y) .. ", " .. math.round(pos.Z) .. ")"
                 )
-    
-                Window:Notify({
-                    Title = "DJ Emulator",
-                    Desc = "Position saved!",
-                    Time = 2,
-                    Type = "normal"
-                })
+                Window:Notify({Title = "DJ Emulator", Desc = "Position saved!", Time = 2, Type = "normal"})
             end)
         end
     })
     
     Interactive:Button({
         Title = "Play",
-        Desc = "Plays music at the picked position (client-side only, only you hear it)",
+        Desc = "Plays music at the picked position",
         Callback = function()
             if not EmulatorPosition then
-                return Window:Notify({
-                    Title = "DJ Emulator",
-                    Desc = "No position set! Click 'Pick Position' first.",
-                    Time = 3,
-                    Type = "error"
-                })
+                return Window:Notify({Title = "DJ Emulator", Desc = "No position set! Click 'Pick Position' first.", Time = 3, Type = "error"})
             end
     
-            -- stop previous if any
             if EmulatorPart then
                 EmulatorPart:Destroy()
                 EmulatorPart = nil
@@ -1728,7 +1704,6 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             local rawId = tostring(Globals.DJMusicId or ""):match("^%s*(.-)%s*$")
             local musicId = (rawId ~= "" and tonumber(rawId)) and rawId or defaultId
     
-            -- build the part
             local part = Instance.new("Part")
             part.Name = "DJEmulator"
             part.Anchored = true
@@ -1739,28 +1714,60 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             part.Parent = workspace
             EmulatorPart = part
     
-            -- AudioPlayer
             local audioPlayer = Instance.new("AudioPlayer")
             audioPlayer.AssetId = "rbxassetid://" .. musicId
             audioPlayer.Looping = true
             audioPlayer.Volume = 1.2
             audioPlayer.Parent = part
     
-            -- AudioDeviceOutput (speaker)
-            local audioOutput = Instance.new("AudioDeviceOutput")
-            audioOutput.Parent = part
+            if EmulatorPlayMode == "Spatial (Real DJ)" then
+                -- Spatial: AudioPlayer -> AudioEmitter, heard via character's AudioListener
+                -- Distance attenuation makes it quieter the further you walk away
+                local audioEmitter = Instance.new("AudioEmitter")
+                -- Tune the rolloff to feel like the in-game DJ Booth (~60 stud range)
+                audioEmitter.AudioInteractionGroup = "Default"
+                audioEmitter.Parent = part
     
-            -- Wire connects AudioPlayer -> AudioDeviceOutput
-            local wire = Instance.new("Wire")
-            wire.SourceInstance = audioPlayer
-            wire.TargetInstance = audioOutput
-            wire.Parent = part
+                -- Optional: set distance rolloff similar to the real tower
+                local distanceAttenuation = Instance.new("DistanceAttenuation")
+                distanceAttenuation:SetKeypoints({
+                    NumberSequenceKeypoint.new(0,   1),   -- full volume at 0 studs
+                    NumberSequenceKeypoint.new(0.3, 0.8), -- slightly reduced at ~18 studs
+                    NumberSequenceKeypoint.new(0.7, 0.3), -- fading at ~42 studs
+                    NumberSequenceKeypoint.new(1,   0),   -- silent at 60 studs
+                })
+                distanceAttenuation.Parent = audioEmitter
+    
+                local wire = Instance.new("Wire")
+                wire.SourceInstance = audioPlayer
+                wire.TargetInstance = audioEmitter
+                wire.Parent = part
+    
+                -- Ensure the local character has an AudioListener (usually auto-added, but just in case)
+                local char = LocalPlayer.Character
+                if char then
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if hrp and not hrp:FindFirstChildOfClass("AudioListener") then
+                        local listener = Instance.new("AudioListener")
+                        listener.Parent = hrp
+                    end
+                end
+            else
+                -- Normal: AudioPlayer -> AudioDeviceOutput (flat, no distance)
+                local audioOutput = Instance.new("AudioDeviceOutput")
+                audioOutput.Parent = part
+    
+                local wire = Instance.new("Wire")
+                wire.SourceInstance = audioPlayer
+                wire.TargetInstance = audioOutput
+                wire.Parent = part
+            end
     
             audioPlayer:Play()
     
             Window:Notify({
                 Title = "DJ Emulator",
-                Desc = "Playing music ID: " .. musicId .. (musicId == defaultId and " (default)" or ""),
+                Desc = "Playing [".. EmulatorPlayMode .."] ID: " .. musicId .. (musicId == defaultId and " (default)" or ""),
                 Time = 3,
                 Type = "normal"
             })
@@ -1774,23 +1781,12 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             if EmulatorPart then
                 EmulatorPart:Destroy()
                 EmulatorPart = nil
-                Window:Notify({
-                    Title = "DJ Emulator",
-                    Desc = "Emulator stopped.",
-                    Time = 2,
-                    Type = "normal"
-                })
+                Window:Notify({Title = "DJ Emulator", Desc = "Emulator stopped.", Time = 2, Type = "normal"})
             else
-                Window:Notify({
-                    Title = "DJ Emulator",
-                    Desc = "Nothing is playing.",
-                    Time = 2,
-                    Type = "error"
-                })
+                Window:Notify({Title = "DJ Emulator", Desc = "Nothing is playing.", Time = 2, Type = "error"})
             end
         end
     })
-
     Interactive:Section({Title = "DJ Booth"})
 
     local DJTrackMap = {
