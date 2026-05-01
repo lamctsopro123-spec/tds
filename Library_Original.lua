@@ -1537,6 +1537,76 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         end
     })
 
+    local DefaultSettings = {
+        -- ... existing settings ...
+        DJMusicId = "",  -- ADD THIS
+    }
+    Interactive:Textbox({
+        Title = "DJ Music ID",
+        Desc = "Enter the music asset ID to play on your DJ Booth",
+        Placeholder = "e.g. 9166992315",
+        Value = tostring(Globals.DJMusicId or ""),
+        ClearTextOnFocus = false,
+        Callback = function(text)
+            local trimmed = text:match("^%s*(.-)%s*$")
+            if trimmed == "" or tonumber(trimmed) then
+                SetSetting("DJMusicId", trimmed)
+                Window:Notify({
+                    Title = "DJ Booth",
+                    Desc = trimmed ~= "" and ("Music ID set to: " .. trimmed) or "Music ID cleared.",
+                    Time = 3,
+                    Type = "normal"
+                })
+            else
+                Window:Notify({
+                    Title = "DJ Booth",
+                    Desc = "Invalid ID! Enter numbers only.",
+                    Time = 3,
+                    Type = "error"
+                })
+            end
+        end
+    })
+    
+    Interactive:Button({
+        Title = "Apply DJ Music",
+        Desc = "Applies the music ID to your placed DJ Booth",
+        Callback = function()
+            local id = tonumber(Globals.DJMusicId)
+            if not id then
+                return Window:Notify({
+                    Title = "DJ Booth",
+                    Desc = "No valid music ID set!",
+                    Time = 3,
+                    Type = "error"
+                })
+            end
+    
+            local found = false
+            for _, v in pairs(workspace.Towers:GetChildren()) do
+                if v:FindFirstChild("TowerReplicator")
+                and v.TowerReplicator:GetAttribute("Name") == "DJ Booth"
+                and v.TowerReplicator:GetAttribute("OwnerId") == LocalPlayer.UserId then
+                    pcall(function()
+                        RemoteFunc:InvokeServer("Troops", "Execute", {
+                            Data = { id },
+                            Name = "Music",
+                            Tower = v
+                        })
+                    end)
+                    found = true
+                end
+            end
+    
+            Window:Notify({
+                Title = "DJ Booth",
+                Desc = found and ("Music applied! ID: " .. id) or "No DJ Booth found!",
+                Time = 3,
+                Type = found and "normal" or "error"
+            })
+        end
+    })
+
     Interactive:Section({Title = "DJ Booth"})
 
     local DJTrackMap = {
@@ -4567,6 +4637,44 @@ task.spawn(function()
             StartAutoPremium()
         end
 
+        task.wait(1)
+    end
+end)
+
+task.spawn(function()
+    local KnownBooths = {}
+
+    while true do
+        local id = tonumber(Globals.DJMusicId)
+        if id then
+            local TowersFolder = workspace:FindFirstChild("Towers")
+            if TowersFolder then
+                for _, v in pairs(TowersFolder:GetChildren()) do
+                    if v:FindFirstChild("TowerReplicator")
+                    and v.TowerReplicator:GetAttribute("Name") == "DJ Booth"
+                    and v.TowerReplicator:GetAttribute("OwnerId") == LocalPlayer.UserId then
+                        if not KnownBooths[v] then
+                            KnownBooths[v] = true
+                            pcall(function()
+                                RemoteFunc:InvokeServer("Troops", "Execute", {
+                                    Data = { id },
+                                    Name = "Music",
+                                    Tower = v
+                                })
+                            end)
+                            Logger:Log("Auto-applied DJ music ID " .. id .. " to new DJ Booth.")
+                        end
+                    end
+                end
+
+                -- cleanup removed booths
+                for booth in pairs(KnownBooths) do
+                    if not booth.Parent then
+                        KnownBooths[booth] = nil
+                    end
+                end
+            end
+        end
         task.wait(1)
     end
 end)
