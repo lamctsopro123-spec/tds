@@ -1721,39 +1721,57 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             audioPlayer.Parent = part
     
             if EmulatorPlayMode == "Spatial (Real DJ)" then
-                -- Spatial: AudioPlayer -> AudioEmitter, heard via character's AudioListener
-                -- Distance attenuation makes it quieter the further you walk away
+                -- Step 1: AudioEmitter on the source part
                 local audioEmitter = Instance.new("AudioEmitter")
-                -- Tune the rolloff to feel like the in-game DJ Booth (~60 stud range)
-                audioEmitter.AudioInteractionGroup = "Default"
                 audioEmitter.Parent = part
     
-                -- Optional: set distance rolloff similar to the real tower
-                local distanceAttenuation = Instance.new("DistanceAttenuation")
-                distanceAttenuation:SetKeypoints({
-                    NumberSequenceKeypoint.new(0,   1),   -- full volume at 0 studs
-                    NumberSequenceKeypoint.new(0.3, 0.8), -- slightly reduced at ~18 studs
-                    NumberSequenceKeypoint.new(0.7, 0.3), -- fading at ~42 studs
-                    NumberSequenceKeypoint.new(1,   0),   -- silent at 60 studs
-                })
-                distanceAttenuation.Parent = audioEmitter
+                local wireSource = Instance.new("Wire")
+                wireSource.SourceInstance = audioPlayer
+                wireSource.TargetInstance = audioEmitter
+                wireSource.Parent = part
     
-                local wire = Instance.new("Wire")
-                wire.SourceInstance = audioPlayer
-                wire.TargetInstance = audioEmitter
-                wire.Parent = part
-    
-                -- Ensure the local character has an AudioListener (usually auto-added, but just in case)
+                -- Step 2: AudioListener on HumanoidRootPart + wire it to AudioDeviceOutput
                 local char = LocalPlayer.Character
-                if char then
-                    local hrp = char:FindFirstChild("HumanoidRootPart")
-                    if hrp and not hrp:FindFirstChildOfClass("AudioListener") then
-                        local listener = Instance.new("AudioListener")
-                        listener.Parent = hrp
-                    end
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+                if not hrp then
+                    EmulatorPart:Destroy()
+                    EmulatorPart = nil
+                    return Window:Notify({Title = "DJ Emulator", Desc = "Character not found!", Time = 3, Type = "error"})
                 end
+    
+                -- Remove old listener/output we created before to avoid duplicates
+                local oldListener = hrp:FindFirstChild("DJEmulatorListener")
+                if oldListener then oldListener:Destroy() end
+                local oldOutput = hrp:FindFirstChild("DJEmulatorOutput")
+                if oldOutput then oldOutput:Destroy() end
+                local oldWire = hrp:FindFirstChild("DJEmulatorWire")
+                if oldWire then oldWire:Destroy() end
+    
+                local audioListener = Instance.new("AudioListener")
+                audioListener.Name = "DJEmulatorListener"
+                audioListener.Parent = hrp
+    
+                local audioOutput = Instance.new("AudioDeviceOutput")
+                audioOutput.Name = "DJEmulatorOutput"
+                audioOutput.Parent = hrp
+    
+                local wireListener = Instance.new("Wire")
+                wireListener.Name = "DJEmulatorWire"
+                wireListener.SourceInstance = audioListener
+                wireListener.TargetInstance = audioOutput
+                wireListener.Parent = hrp
+    
+                -- Cleanup listener when emulator part is destroyed
+                part.AncestryChanged:Connect(function()
+                    if not part.Parent then
+                        if audioListener and audioListener.Parent then audioListener:Destroy() end
+                        if audioOutput and audioOutput.Parent then audioOutput:Destroy() end
+                        if wireListener and wireListener.Parent then wireListener:Destroy() end
+                    end
+                end)
             else
-                -- Normal: AudioPlayer -> AudioDeviceOutput (flat, no distance)
+                -- Normal flat audio
                 local audioOutput = Instance.new("AudioDeviceOutput")
                 audioOutput.Parent = part
     
@@ -1767,7 +1785,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
     
             Window:Notify({
                 Title = "DJ Emulator",
-                Desc = "Playing [".. EmulatorPlayMode .."] ID: " .. musicId .. (musicId == defaultId and " (default)" or ""),
+                Desc = "Playing [" .. EmulatorPlayMode .. "] ID: " .. musicId .. (musicId == defaultId and " (default)" or ""),
                 Time = 3,
                 Type = "normal"
             })
