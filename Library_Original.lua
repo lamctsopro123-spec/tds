@@ -1540,9 +1540,9 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
     Interactive:Section({Title = "DJ Booth"})
 
     local DJTrackMap = {
-        ["Purple (Range Buff)"]    = 1,
-        ["Green (Discount Buff)"]  = 2,
-        ["Red (Damage Buff)"]      = 3,
+        ["Purple (Range Buff)"]    = "Purple",
+        ["Green (Discount Buff)"]  = "Green",
+        ["Red (Damage Buff)"]      = "Red",
     }
     local SelectedDJTrack = 1
     
@@ -1690,7 +1690,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         Value = "Queue 1",
         Callback = function(choice)
             -- Convert "Queue 1" -> "Queue1" etc.
-            SelectedMercQueue = choice:gsub(" ", "")
+            SelectedMercQueue = choice:gsub("Queue", "Unit")
         end
     })
     
