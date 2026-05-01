@@ -244,7 +244,8 @@ local DefaultSettings = {
     HideUsername = true,
     StreamerName = "",
     tagName = "None",
-    Modifiers = {}
+    Modifiers = {},
+    DJMusicId = "",
 }
 
 local TimeScaleValues = {0.5, 1, 1.5, 2}
@@ -1537,10 +1538,6 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         end
     })
 
-    local DefaultSettings = {
-        -- ... existing settings ...
-        DJMusicId = "",  -- ADD THIS
-    }
     Interactive:Textbox({
         Title = "DJ Music ID",
         Desc = "Enter the music asset ID to play on your DJ Booth",
