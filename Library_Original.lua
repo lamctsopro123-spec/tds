@@ -1485,6 +1485,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             end
         end
     })
+    
 
     Interactive:Button({
         Title = "Upgrade All",
@@ -1532,6 +1533,276 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     Title = "Cancel",
                     Color = Color3.fromRGB(0, 188, 0)
                 }
+            })
+        end
+    })
+
+    Interactive:Section({Title = "DJ Booth"})
+
+    local DJTrackMap = {
+        ["Purple (Range Buff)"]    = 1,
+        ["Green (Discount Buff)"]  = 2,
+        ["Red (Damage Buff)"]      = 3,
+    }
+    local SelectedDJTrack = 1
+    
+    Interactive:Dropdown({
+        Title = "Track",
+        Desc = "Purple = Range Buff | Green = Discount Buff | Red = Damage Buff (requires Lv2)",
+        List = {"Purple (Range Buff)", "Green (Discount Buff)", "Red (Damage Buff)"},
+        Value = "Purple (Range Buff)",
+        Callback = function(choice)
+            SelectedDJTrack = DJTrackMap[choice] or 1
+        end
+    })
+    
+    Interactive:Button({
+        Title = "Set DJ Track",
+        Desc = "",
+        Callback = function()
+            local found = false
+            for _, v in pairs(workspace.Towers:GetChildren()) do
+                if v:FindFirstChild("TowerReplicator")
+                and v.TowerReplicator:GetAttribute("Name") == "DJ Booth"
+                and v.TowerReplicator:GetAttribute("OwnerId") == LocalPlayer.UserId then
+                    local level = v.TowerReplicator:GetAttribute("Upgrade") or 0
+    
+                    if SelectedDJTrack == 3 and level < 2 then
+                        Window:Notify({
+                            Title = "ADS",
+                            Desc = "Red track requires DJ Booth Level 2+!",
+                            Time = 3,
+                            Type = "error"
+                        })
+                        return
+                    end
+    
+                    pcall(function()
+                        RemoteFunc:InvokeServer("Troops", "Option", "Set", {
+                            Troop = v,
+                            Name = "Track",
+                            Value = SelectedDJTrack
+                        })
+                    end)
+                    found = true
+                    break -- only 1 DJ Booth per player
+                end
+            end
+    
+            Window:Notify({
+                Title = "ADS",
+                Desc = found
+                    and ("DJ Booth track set to " .. SelectedDJTrack .. "!")
+                    or "No DJ Booth found!",
+                Time = 3,
+                Type = found and "normal" or "error"
+            })
+        end
+    })
+    
+    -- // ─── Mercenary Base ────────────────────────────────────────────
+    Interactive:Section({Title = "Mercenary Base"})
+    
+    local ScannedMercBases = {}
+    local ScannedMercLabels = {}
+    local SelectedMercIdx = nil
+    local MercDropdownRef = nil
+    
+    -- Unit options per queue slot (depends on upgrade level)
+    local UnitOptions = {"Rifleman", "Grenadier", "Riot Guard", "Field Medic"}
+    local QueueOptions = {"Queue 1", "Queue 2", "Queue 3"}
+    
+    local SelectedMercUnit = "Rifleman"
+    local SelectedMercQueue = "Queue1"
+    
+    local function ScanMercBases()
+        ScannedMercBases = {}
+        ScannedMercLabels = {}
+    
+        for _, v in pairs(workspace.Towers:GetChildren()) do
+            if v:FindFirstChild("TowerReplicator")
+            and v.TowerReplicator:GetAttribute("Name") == "Mercenary Base"
+            and v.TowerReplicator:GetAttribute("OwnerId") == LocalPlayer.UserId then
+                table.insert(ScannedMercBases, v)
+                local idx = #ScannedMercBases
+                local lv = v.TowerReplicator:GetAttribute("Upgrade") or 0
+                local part = v:FindFirstChildWhichIsA("BasePart")
+                local posStr = part
+                    and " (" .. math.round(part.Position.X) .. ", " .. math.round(part.Position.Z) .. ")"
+                    or ""
+                table.insert(ScannedMercLabels, "Base #" .. idx .. " | Lv." .. lv .. posStr)
+            end
+        end
+    end
+    
+    ScanMercBases()
+    
+    Interactive:Button({
+        Title = "Scan Mercenary Bases",
+        Desc = "Detects all your placed Mercenary Bases",
+        Callback = function()
+            ScanMercBases()
+    
+            if MercDropdownRef then
+                MercDropdownRef:Clear()
+                if #ScannedMercLabels > 0 then
+                    for _, label in ipairs(ScannedMercLabels) do
+                        MercDropdownRef:Add(label)
+                    end
+                    SelectedMercIdx = 1
+                else
+                    MercDropdownRef:Add("None — click Scan")
+                    SelectedMercIdx = nil
+                end
+            end
+    
+            Window:Notify({
+                Title = "ADS",
+                Desc = #ScannedMercBases > 0
+                    and ("Found " .. #ScannedMercBases .. " Mercenary Base(s)!")
+                    or "No Mercenary Bases found! Are they placed?",
+                Time = 3,
+                Type = #ScannedMercBases > 0 and "normal" or "error"
+            })
+        end
+    })
+    
+    MercDropdownRef = Interactive:Dropdown({
+        Title = "Select Base",
+        Desc = "Scan first to detect your Mercenary Bases",
+        List = #ScannedMercLabels > 0 and ScannedMercLabels or {"None — click Scan"},
+        Value = ScannedMercLabels[1] or "None — click Scan",
+        Callback = function(choice)
+            for i, label in ipairs(ScannedMercLabels) do
+                if label == choice then
+                    SelectedMercIdx = i
+                    return
+                end
+            end
+            SelectedMercIdx = nil
+        end
+    })
+    
+    Interactive:Dropdown({
+        Title = "Queue Slot",
+        Desc = "Which spawn queue to configure",
+        List = QueueOptions,
+        Value = "Queue 1",
+        Callback = function(choice)
+            -- Convert "Queue 1" -> "Queue1" etc.
+            SelectedMercQueue = choice:gsub(" ", "")
+        end
+    })
+    
+    Interactive:Dropdown({
+        Title = "Unit Type",
+        Desc = "Rifleman: Lv0+ | Grenadier: Lv1+ | Riot Guard: Lv4+ | Field Medic: Lv5+",
+        List = UnitOptions,
+        Value = "Rifleman",
+        Callback = function(choice)
+            SelectedMercUnit = choice
+        end
+    })
+    
+    local UnitLevelReq = {
+        ["Rifleman"]   = 0,
+        ["Grenadier"]  = 1,
+        ["Riot Guard"] = 4,
+        ["Field Medic"] = 5
+    }
+    
+    local function ApplyMercOption(tower, label)
+        local level = tower.TowerReplicator:GetAttribute("Upgrade") or 0
+        local req = UnitLevelReq[SelectedMercUnit] or 0
+    
+        if level < req then
+            Window:Notify({
+                Title = "ADS",
+                Desc = SelectedMercUnit .. " requires Mercenary Base Level " .. req .. "+! (This base is Lv." .. level .. ")",
+                Time = 4,
+                Type = "error"
+            })
+            return false
+        end
+    
+        local ok = pcall(function()
+            RemoteFunc:InvokeServer("Troops", "Option", "Set", {
+                Troop = tower,
+                Name = SelectedMercQueue,
+                Value = SelectedMercUnit
+            })
+        end)
+    
+        Window:Notify({
+            Title = "ADS",
+            Desc = ok
+                and ("Set " .. label .. " | " .. SelectedMercQueue .. " -> " .. SelectedMercUnit)
+                or "Failed to set option on " .. label,
+            Time = 3,
+            Type = ok and "normal" or "error"
+        })
+    
+        return ok
+    end
+    
+    Interactive:Button({
+        Title = "Apply to Selected Base",
+        Desc = "",
+        Callback = function()
+            if not SelectedMercIdx or not ScannedMercBases[SelectedMercIdx] then
+                Window:Notify({
+                    Title = "ADS",
+                    Desc = "No base selected! Scan first.",
+                    Time = 3,
+                    Type = "error"
+                })
+                return
+            end
+    
+            local tower = ScannedMercBases[SelectedMercIdx]
+            if not tower or not tower.Parent then
+                Window:Notify({
+                    Title = "ADS",
+                    Desc = "Base no longer exists! Rescan.",
+                    Time = 3,
+                    Type = "error"
+                })
+                return
+            end
+    
+            ApplyMercOption(tower, ScannedMercLabels[SelectedMercIdx])
+        end
+    })
+    
+    Interactive:Button({
+        Title = "Apply to ALL Bases",
+        Desc = "",
+        Callback = function()
+            if #ScannedMercBases == 0 then
+                Window:Notify({
+                    Title = "ADS",
+                    Desc = "No bases found! Scan first.",
+                    Time = 3,
+                    Type = "error"
+                })
+                return
+            end
+    
+            local count = 0
+            for i, tower in ipairs(ScannedMercBases) do
+                if tower and tower.Parent then
+                    if ApplyMercOption(tower, ScannedMercLabels[i]) then
+                        count += 1
+                    end
+                    task.wait(0.1)
+                end
+            end
+    
+            Window:Notify({
+                Title = "ADS",
+                Desc = "Applied " .. SelectedMercQueue .. " -> " .. SelectedMercUnit .. " to " .. count .. " base(s)!",
+                Time = 3,
+                Type = "normal"
             })
         end
     })
@@ -1618,6 +1889,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             end)
         end
     })
+    
 
     Interactive:Section({Title = "Player Statistics"})
     
