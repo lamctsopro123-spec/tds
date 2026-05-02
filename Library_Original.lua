@@ -2138,12 +2138,10 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                 local function ApplySkinToTower(tower, skinFolder, upgradeLevel)
                     local rep = tower:FindFirstChild("TowerReplicator")
                     if not rep then return end
-    
-                    -- Remove old skin
+                
                     local oldSkin = tower:FindFirstChild("__AppliedSkin__")
                     if oldSkin then oldSkin:Destroy() end
-    
-                    -- Remove old welds on bones
+                
                     for _, boneName in ipairs(CharacterBones) do
                         local bone = tower:FindFirstChild(boneName)
                         if bone then
@@ -2152,21 +2150,35 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                             end
                         end
                     end
-    
-                    -- Hide ALL default tower parts
-                    for _, obj in ipairs(tower:GetDescendants()) do
-                        if obj:IsA("BasePart") then
-                            pcall(function() obj.Transparency = 1 end)
+                
+                    -- ONLY hide cosmetic folders, never touch bones or HumanoidRootPart
+                    local foldersToHide = {"Upgrades", "SpeakerRig", "DJRig"}
+                    for _, folderName in ipairs(foldersToHide) do
+                        local folder = tower:FindFirstChild(folderName)
+                        if folder then
+                            for _, obj in ipairs(folder:GetDescendants()) do
+                                if obj:IsA("BasePart") then
+                                    pcall(function() obj.Transparency = 1 end)
+                                end
+                            end
                         end
                     end
-    
-                    -- Clone skin
+                
+                    -- Hide body parts but NOT HumanoidRootPart (game needs it for interaction)
+                    for _, boneName in ipairs(CharacterBones) do
+                        if boneName ~= "HumanoidRootPart" then
+                            local bone = tower:FindFirstChild(boneName)
+                            if bone and bone:IsA("BasePart") then
+                                pcall(function() bone.Transparency = 1 end)
+                            end
+                        end
+                    end
+                
                     local skinClone = skinFolder:Clone()
                     skinClone.Name = "__AppliedSkin__"
                     skinClone.Parent = tower
-    
-                    -- Hide skin upgrade parts that are above current level
-                    -- Show only levels 0 through upgradeLevel
+                
+                    -- Show only skin upgrade levels up to current
                     local skinUpgrades = skinClone:FindFirstChild("Upgrades")
                     if skinUpgrades then
                         for _, levelFolder in ipairs(skinUpgrades:GetChildren()) do
@@ -2175,24 +2187,14 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                                 local visible = levelNum <= upgradeLevel
                                 for _, obj in ipairs(levelFolder:GetDescendants()) do
                                     if obj:IsA("BasePart") then
-                                        pcall(function()
-                                            obj.Transparency = visible and 0 or 1
-                                        end)
+                                        pcall(function() obj.Transparency = visible and 0 or 1 end)
                                     end
                                 end
                             end
                         end
                     end
-    
-                    -- Show top-level skin body parts (always visible)
-                    for _, boneName in ipairs(CharacterBones) do
-                        local skinBone = skinClone:FindFirstChild(boneName)
-                        if skinBone and skinBone:IsA("BasePart") then
-                            pcall(function() skinBone.Transparency = 0 end)
-                        end
-                    end
-    
-                    -- Also show SpeakerRig, StageRig, Weapon, etc at top level
+                
+                    -- Show top level skin parts (SpeakerRig, StageRig, Weapon, body parts)
                     for _, child in ipairs(skinClone:GetChildren()) do
                         if child.Name ~= "Upgrades" and child.Name ~= "Animations" then
                             for _, obj in ipairs(child:GetDescendants()) do
@@ -2205,18 +2207,18 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                             end
                         end
                     end
-    
-                    -- Weld skin bones to tower animated bones
+                
                     local skinHRP = skinClone:FindFirstChild("HumanoidRootPart")
                     local towerHRP = tower:FindFirstChild("HumanoidRootPart")
-    
+                
+                    -- Weld skin bones to tower bones WITHOUT touching CFrame (prevents flip)
                     for _, boneName in ipairs(CharacterBones) do
                         local towerBone = tower:FindFirstChild(boneName)
                         local skinBone = skinClone:FindFirstChild(boneName)
                         if towerBone and skinBone and skinBone:IsA("BasePart") then
                             pcall(function()
                                 skinBone.Anchored = false
-                                skinBone.CFrame = towerBone.CFrame
+                                -- NO CFrame assignment here, let weld handle positioning
                                 local w = Instance.new("WeldConstraint")
                                 w.Name = "__SkinWeld__"
                                 w.Part0 = towerBone
@@ -2225,8 +2227,8 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                             end)
                         end
                     end
-    
-                    -- Weld remaining unjointed skin parts to HRP
+                
+                    -- Weld remaining unjointed skin parts
                     for _, obj in ipairs(skinClone:GetDescendants()) do
                         if obj:IsA("BasePart") then
                             local isBone = false
@@ -2237,7 +2239,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                                 end
                             end
                             if isBone then continue end
-    
+                
                             pcall(function()
                                 obj.Anchored = false
                                 local hasJoint = false
