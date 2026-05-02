@@ -1038,7 +1038,7 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Duxii
 
 local Window = Library:Window({
     Title = "Aether Hub",
-    Desc = "v6",
+    Desc = "v7",
     Theme = "Dark",
     DiscordLink = "https://discord.gg/autostrat",
     Icon = 100189470230468,
@@ -2134,14 +2134,14 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     "HumanoidRootPart", "Torso", "Head",
                     "Right Arm", "Left Arm", "Right Leg", "Left Leg"
                 }
-    
+
                 local SkinConnections = {}
 
                 local function ApplySkinToTower(tower, skinFolder, upgradeLevel)
                     local rep = tower:FindFirstChild("TowerReplicator")
                     if not rep then return end
                 
-                    -- Cleanup old skin and connections
+                    -- Cleanup old
                     local oldSkin = tower:FindFirstChild("__AppliedSkin__")
                     if oldSkin then oldSkin:Destroy() end
                     if SkinConnections[tower] then
@@ -2149,8 +2149,8 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         SkinConnections[tower] = nil
                     end
                 
-                    -- Hide cosmetic folders only
-                    local foldersToHide = {"Upgrades", "SpeakerRig", "DJRig"}
+                    -- Hide these folders on the default tower
+                    local foldersToHide = {"Upgrades", "SpeakerRig", "DJRig", "Weapon"}
                     for _, folderName in ipairs(foldersToHide) do
                         local folder = tower:FindFirstChild(folderName)
                         if folder then
@@ -2162,12 +2162,17 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Hide body parts but NOT HumanoidRootPart
-                    for _, boneName in ipairs(CharacterBones) do
-                        if boneName ~= "HumanoidRootPart" then
-                            local bone = tower:FindFirstChild(boneName)
-                            if bone and bone:IsA("BasePart") then
-                                pcall(function() bone.Transparency = 1 end)
+                    -- Hide body parts (not HRP)
+                    local bodyParts = {"Torso", "Head", "Right Arm", "Left Arm", "Right Leg", "Left Leg"}
+                    for _, boneName in ipairs(bodyParts) do
+                        local bone = tower:FindFirstChild(boneName)
+                        if bone and bone:IsA("BasePart") then
+                            pcall(function() bone.Transparency = 1 end)
+                            -- also hide any decals inside (face)
+                            for _, child in ipairs(bone:GetChildren()) do
+                                if child:IsA("Decal") or child:IsA("Texture") then
+                                    pcall(function() child.Transparency = 1 end)
+                                end
                             end
                         end
                     end
@@ -2176,7 +2181,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     local skinClone = skinFolder:Clone()
                     skinClone.Name = "__AppliedSkin__"
                 
-                    -- Unanchor ALL skin parts so RenderStepped can move them freely
+                    -- Unanchor all skin parts
                     for _, obj in ipairs(skinClone:GetDescendants()) do
                         if obj:IsA("BasePart") then
                             pcall(function()
@@ -2196,7 +2201,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                 
                     skinClone.Parent = tower
                 
-                    -- Handle skin upgrade visibility
+                    -- Handle upgrade visibility
                     local skinUpgrades = skinClone:FindFirstChild("Upgrades")
                     if skinUpgrades then
                         for _, levelFolder in ipairs(skinUpgrades:GetChildren()) do
@@ -2212,9 +2217,9 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Show all top level skin parts
+                    -- Show all non-upgrade skin parts
                     for _, child in ipairs(skinClone:GetChildren()) do
-                        if child.Name ~= "Upgrades" and child.Name ~= "Animations" then
+                        if child.Name ~= "Upgrades" and child.Name ~= "Animations" and child.Name ~= "AnimationController" and child.Name ~= "UpgradesModule" then
                             for _, obj in ipairs(child:GetDescendants()) do
                                 if obj:IsA("BasePart") then
                                     pcall(function() obj.Transparency = 0 end)
@@ -2226,39 +2231,87 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Build bone lookup tables
-                    local towerBones = {}
-                    local skinBones = {}
-                    for _, boneName in ipairs(CharacterBones) do
-                        towerBones[boneName] = tower:FindFirstChild(boneName)
-                        skinBones[boneName] = skinClone:FindFirstChild(boneName)
+                    -- Build sync map: all parts that exist in BOTH tower and skin by name
+                    -- This covers HRP, Torso, Head, Arms, Legs AND SpeakerRig/StageRig motor targets
+                    local syncMap = {} -- {towerPart, skinPart}
+                
+                    local function buildSyncMap(towerParent, skinParent)
+                        for _, towerChild in ipairs(towerParent:GetChildren()) do
+                            if towerChild:IsA("BasePart") then
+                                local skinChild = skinParent:FindFirstChild(towerChild.Name)
+                                if skinChild and skinChild:IsA("BasePart") then
+                                    table.insert(syncMap, {tower = towerChild, skin = skinChild})
+                                end
+                            elseif towerChild:IsA("Model") or towerChild:IsA("Folder") then
+                                local skinChild = skinParent:FindFirstChild(towerChild.Name)
+                                if skinChild then
+                                    buildSyncMap(towerChild, skinChild)
+                                end
+                            end
+                        end
                     end
                 
-                    -- Every frame: sync skin bone CFrames to tower bone CFrames
-                    -- skin's internal WeldConstraints keep clothes attached to bones
+                    -- Sync top-level body parts
+                    local allCharBones = {"HumanoidRootPart", "Torso", "Head", "Right Arm", "Left Arm", "Right Leg", "Left Leg"}
+                    for _, boneName in ipairs(allCharBones) do
+                        local towerBone = tower:FindFirstChild(boneName)
+                        local skinBone = skinClone:FindFirstChild(boneName)
+                        if towerBone and skinBone then
+                            table.insert(syncMap, {tower = towerBone, skin = skinBone})
+                        end
+                    end
+                
+                    -- Also try to match SpeakerRig and StageRig parts by name
+                    local towerSpeakerRig = tower:FindFirstChild("SpeakerRig")
+                    local skinSpeakerRig = skinClone:FindFirstChild("SpeakerRig")
+                    if towerSpeakerRig and skinSpeakerRig then
+                        buildSyncMap(towerSpeakerRig, skinSpeakerRig)
+                    end
+                
+                    -- Play tower animations on skin's AnimationController
+                    local towerHumanoid = tower:FindFirstChildOfClass("Humanoid")
+                    local skinAnimController = skinClone:FindFirstChildOfClass("AnimationController")
+                    local skinAnimFolder = skinClone:FindFirstChild("Animations")
+                
+                    if towerHumanoid and skinAnimController and skinAnimFolder then
+                        local skinAnimator = skinAnimController:FindFirstChildOfClass("Animator")
+                        if skinAnimator then
+                            -- Find idle animation in skin
+                            local idleFolder = skinAnimFolder:FindFirstChild("Idle")
+                            if idleFolder then
+                                local animObj = idleFolder:FindFirstChildOfClass("Animation")
+                                    or idleFolder:GetChildren()[1]
+                                if animObj and animObj:IsA("Animation") then
+                                    pcall(function()
+                                        local track = skinAnimator:LoadAnimation(animObj)
+                                        track:Play()
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                
+                    -- RenderStepped: sync all matched part CFrames
                     local conn = RunService.RenderStepped:Connect(function()
                         if not tower.Parent or not skinClone.Parent then return end
-                        for _, boneName in ipairs(CharacterBones) do
-                            local towerBone = towerBones[boneName]
-                            local skinBone = skinBones[boneName]
-                            if towerBone and skinBone then
-                                pcall(function()
-                                    skinBone.CFrame = towerBone.CFrame
-                                end)
-                            end
+                        for _, pair in ipairs(syncMap) do
+                            pcall(function()
+                                pair.skin.CFrame = pair.tower.CFrame
+                            end)
                         end
                     end)
                 
                     SkinConnections[tower] = conn
                 
-                    -- Cleanup when tower removed
                     tower.AncestryChanged:Connect(function()
                         if not tower.Parent then
                             if SkinConnections[tower] then
                                 SkinConnections[tower]:Disconnect()
                                 SkinConnections[tower] = nil
                             end
-                            if skinClone.Parent then skinClone:Destroy() end
+                            if skinClone and skinClone.Parent then
+                                skinClone:Destroy()
+                            end
                         end
                     end)
                 end
