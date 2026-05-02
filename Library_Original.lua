@@ -1884,7 +1884,10 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
         ScannedMercBases = {}
         ScannedMercLabels = {}
     
-        for _, v in pairs(workspace.Towers:GetChildren()) do
+        local TowersFolder = workspace:FindFirstChild("Towers")
+        if not TowersFolder then return end
+    
+        for _, v in pairs(TowersFolder:GetChildren()) do
             if v:FindFirstChild("TowerReplicator")
             and v.TowerReplicator:GetAttribute("Name") == "Mercenary Base"
             and v.TowerReplicator:GetAttribute("OwnerId") == LocalPlayer.UserId then
