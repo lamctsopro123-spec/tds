@@ -1038,7 +1038,7 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Duxii
 
 local Window = Library:Window({
     Title = "Aether Hub",
-    Desc = "v3",
+    Desc = "v4",
     Theme = "Dark",
     DiscordLink = "https://discord.gg/autostrat",
     Icon = 100189470230468,
@@ -2130,13 +2130,146 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     return Window:Notify({Title = "Skin Modifier", Desc = "Skin '" .. SkinName .. "' not found!", Time = 4, Type = "error"})
                 end
     
-                -- these are the animated bones shared between all character rigs
                 local CharacterBones = {
                     "HumanoidRootPart", "Torso", "Head",
                     "Right Arm", "Left Arm", "Right Leg", "Left Leg"
                 }
     
+                local function ApplySkinToTower(tower, skinFolder, upgradeLevel)
+                    local rep = tower:FindFirstChild("TowerReplicator")
+                    if not rep then return end
+    
+                    -- Remove old skin
+                    local oldSkin = tower:FindFirstChild("__AppliedSkin__")
+                    if oldSkin then oldSkin:Destroy() end
+    
+                    -- Remove old welds on bones
+                    for _, boneName in ipairs(CharacterBones) do
+                        local bone = tower:FindFirstChild(boneName)
+                        if bone then
+                            for _, w in ipairs(bone:GetChildren()) do
+                                if w.Name == "__SkinWeld__" then w:Destroy() end
+                            end
+                        end
+                    end
+    
+                    -- Hide ALL default tower parts
+                    for _, obj in ipairs(tower:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            pcall(function() obj.Transparency = 1 end)
+                        end
+                    end
+    
+                    -- Clone skin
+                    local skinClone = skinFolder:Clone()
+                    skinClone.Name = "__AppliedSkin__"
+                    skinClone.Parent = tower
+    
+                    -- Hide skin upgrade parts that are above current level
+                    -- Show only levels 0 through upgradeLevel
+                    local skinUpgrades = skinClone:FindFirstChild("Upgrades")
+                    if skinUpgrades then
+                        for _, levelFolder in ipairs(skinUpgrades:GetChildren()) do
+                            local levelNum = tonumber(levelFolder.Name)
+                            if levelNum then
+                                local visible = levelNum <= upgradeLevel
+                                for _, obj in ipairs(levelFolder:GetDescendants()) do
+                                    if obj:IsA("BasePart") then
+                                        pcall(function()
+                                            obj.Transparency = visible and 0 or 1
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+    
+                    -- Show top-level skin body parts (always visible)
+                    for _, boneName in ipairs(CharacterBones) do
+                        local skinBone = skinClone:FindFirstChild(boneName)
+                        if skinBone and skinBone:IsA("BasePart") then
+                            pcall(function() skinBone.Transparency = 0 end)
+                        end
+                    end
+    
+                    -- Also show SpeakerRig, StageRig, Weapon, etc at top level
+                    for _, child in ipairs(skinClone:GetChildren()) do
+                        if child.Name ~= "Upgrades" and child.Name ~= "Animations" then
+                            for _, obj in ipairs(child:GetDescendants()) do
+                                if obj:IsA("BasePart") then
+                                    pcall(function() obj.Transparency = 0 end)
+                                end
+                            end
+                            if child:IsA("BasePart") then
+                                pcall(function() child.Transparency = 0 end)
+                            end
+                        end
+                    end
+    
+                    -- Weld skin bones to tower animated bones
+                    local skinHRP = skinClone:FindFirstChild("HumanoidRootPart")
+                    local towerHRP = tower:FindFirstChild("HumanoidRootPart")
+    
+                    for _, boneName in ipairs(CharacterBones) do
+                        local towerBone = tower:FindFirstChild(boneName)
+                        local skinBone = skinClone:FindFirstChild(boneName)
+                        if towerBone and skinBone and skinBone:IsA("BasePart") then
+                            pcall(function()
+                                skinBone.Anchored = false
+                                skinBone.CFrame = towerBone.CFrame
+                                local w = Instance.new("WeldConstraint")
+                                w.Name = "__SkinWeld__"
+                                w.Part0 = towerBone
+                                w.Part1 = skinBone
+                                w.Parent = towerBone
+                            end)
+                        end
+                    end
+    
+                    -- Weld remaining unjointed skin parts to HRP
+                    for _, obj in ipairs(skinClone:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            local isBone = false
+                            for _, boneName in ipairs(CharacterBones) do
+                                if obj == skinClone:FindFirstChild(boneName) then
+                                    isBone = true
+                                    break
+                                end
+                            end
+                            if isBone then continue end
+    
+                            pcall(function()
+                                obj.Anchored = false
+                                local hasJoint = false
+                                for _, c in ipairs(obj:GetChildren()) do
+                                    if c:IsA("Motor6D") or c:IsA("WeldConstraint") or c:IsA("Weld") then
+                                        hasJoint = true
+                                        break
+                                    end
+                                end
+                                if obj.Parent and obj.Parent:IsA("BasePart") then
+                                    for _, c in ipairs(obj.Parent:GetChildren()) do
+                                        if (c:IsA("Motor6D") or c:IsA("WeldConstraint") or c:IsA("Weld"))
+                                        and (c.Part1 == obj or c.Part0 == obj) then
+                                            hasJoint = true
+                                            break
+                                        end
+                                    end
+                                end
+                                if not hasJoint then
+                                    local w = Instance.new("WeldConstraint")
+                                    w.Name = "__SkinWeld__"
+                                    w.Part0 = skinHRP or towerHRP
+                                    w.Part1 = obj
+                                    w.Parent = obj
+                                end
+                            end)
+                        end
+                    end
+                end
+    
                 local swappedTowers = 0
+                local watchConnections = {}
     
                 for _, tower in ipairs(workspace.Towers:GetChildren()) do
                     local rep = tower:FindFirstChild("TowerReplicator")
@@ -2144,109 +2277,25 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     and rep:GetAttribute("Name") == SkinTowerName
                     and rep:GetAttribute("OwnerId") == LocalPlayer.UserId then
     
-                        -- Remove any previously applied skin
-                        local oldSkin = tower:FindFirstChild("__AppliedSkin__")
-                        if oldSkin then oldSkin:Destroy() end
+                        local currentLevel = rep:GetAttribute("Upgrade") or 0
+                        ApplySkinToTower(tower, skinFolder, currentLevel)
     
-                        -- Remove old welds we added
-                        for _, boneName in ipairs(CharacterBones) do
-                            local bone = tower:FindFirstChild(boneName)
-                            if bone then
-                                for _, w in ipairs(bone:GetChildren()) do
-                                    if w:IsA("WeldConstraint") and w.Name == "__SkinWeld__" then
-                                        w:Destroy()
-                                    end
-                                end
+                        -- Watch for upgrades and reapply skin
+                        local conn = rep:GetAttributeChangedSignal("Upgrade"):Connect(function()
+                            local newLevel = rep:GetAttribute("Upgrade") or 0
+                            task.wait(0.2) -- let game apply its changes first
+                            if tower.Parent then
+                                ApplySkinToTower(tower, skinFolder, newLevel)
                             end
-                        end
+                        end)
+                        table.insert(watchConnections, conn)
     
-                        -- Hide ALL original BaseParts in the tower
-                        for _, obj in ipairs(tower:GetDescendants()) do
-                            if obj:IsA("BasePart") then
-                                pcall(function() obj.Transparency = 1 end)
+                        -- Clean up connection if tower is removed
+                        tower.AncestryChanged:Connect(function()
+                            if not tower.Parent then
+                                conn:Disconnect()
                             end
-                        end
-                        -- also hide direct children body parts
-                        for _, boneName in ipairs(CharacterBones) do
-                            local bone = tower:FindFirstChild(boneName)
-                            if bone and bone:IsA("BasePart") then
-                                pcall(function() bone.Transparency = 1 end)
-                            end
-                        end
-    
-                        -- Clone skin
-                        local skinClone = skinFolder:Clone()
-                        skinClone.Name = "__AppliedSkin__"
-                        skinClone.Parent = tower
-    
-                        -- For each character bone in the skin, weld it to the 
-                        -- tower's corresponding animated bone so it follows animations
-                        for _, boneName in ipairs(CharacterBones) do
-                            local towerBone = tower:FindFirstChild(boneName)
-                            local skinBone = skinClone:FindFirstChild(boneName)
-    
-                            if towerBone and skinBone and skinBone:IsA("BasePart") then
-                                pcall(function()
-                                    skinBone.Anchored = false
-                                    skinBone.CFrame = towerBone.CFrame
-    
-                                    local w = Instance.new("WeldConstraint")
-                                    w.Name = "__SkinWeld__"
-                                    w.Part0 = towerBone
-                                    w.Part1 = skinBone
-                                    w.Parent = towerBone
-                                end)
-                            end
-                        end
-    
-                        -- Weld all remaining skin BaseParts that have no joint yet
-                        -- (accessories, equipment, upgrade parts etc)
-                        local skinHRP = skinClone:FindFirstChild("HumanoidRootPart")
-                        local towerHRP = tower:FindFirstChild("HumanoidRootPart")
-    
-                        for _, obj in ipairs(skinClone:GetDescendants()) do
-                            if obj:IsA("BasePart") then
-                                -- skip the bones we already handled
-                                local isBone = false
-                                for _, boneName in ipairs(CharacterBones) do
-                                    if obj == skinClone:FindFirstChild(boneName) then
-                                        isBone = true
-                                        break
-                                    end
-                                end
-                                if isBone then continue end
-    
-                                pcall(function()
-                                    obj.Anchored = false
-                                    -- check if it already has a joint connecting it
-                                    local hasJoint = false
-                                    for _, c in ipairs(obj:GetChildren()) do
-                                        if c:IsA("Motor6D") or c:IsA("WeldConstraint") or c:IsA("Weld") then
-                                            hasJoint = true
-                                            break
-                                        end
-                                    end
-                                    -- also check parent
-                                    if obj.Parent and obj.Parent:IsA("Instance") then
-                                        for _, c in ipairs(obj.Parent:GetChildren()) do
-                                            if (c:IsA("Motor6D") or c:IsA("WeldConstraint") or c:IsA("Weld"))
-                                            and (c.Part1 == obj or c.Part0 == obj) then
-                                                hasJoint = true
-                                                break
-                                            end
-                                        end
-                                    end
-    
-                                    if not hasJoint then
-                                        local w = Instance.new("WeldConstraint")
-                                        w.Name = "__SkinWeld__"
-                                        w.Part0 = skinHRP or towerHRP
-                                        w.Part1 = obj
-                                        w.Parent = obj
-                                    end
-                                end)
-                            end
-                        end
+                        end)
     
                         swappedTowers += 1
                     end
@@ -2255,7 +2304,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                 if swappedTowers == 0 then
                     Window:Notify({Title = "Skin Modifier", Desc = "No placed " .. SkinTowerName .. " found!", Time = 4, Type = "error"})
                 else
-                    Window:Notify({Title = "Skin Modifier", Desc = "Applied " .. SkinName .. " to " .. swappedTowers .. " tower(s)!", Time = 4, Type = "normal"})
+                    Window:Notify({Title = "Skin Modifier", Desc = "Applied " .. SkinName .. " to " .. swappedTowers .. " tower(s)! Upgrade-safe.", Time = 4, Type = "normal"})
                 end
             end)
         end
