@@ -1038,7 +1038,7 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Duxii
 
 local Window = Library:Window({
     Title = "Aether Hub",
-    Desc = "v9",
+    Desc = "v10",
     Theme = "Dark",
     DiscordLink = "https://discord.gg/autostrat",
     Icon = 100189470230468,
@@ -2148,7 +2148,6 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         SkinConnections[tower] = nil
                     end
                 
-                    -- Hide default tower folders
                     local foldersToHide = {"Upgrades", "SpeakerRig", "DJRig", "Weapon"}
                     for _, folderName in ipairs(foldersToHide) do
                         local folder = tower:FindFirstChild(folderName)
@@ -2161,7 +2160,6 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Hide default body parts + face decals (not HRP)
                     local bodyParts = {"Torso", "Head", "Right Arm", "Left Arm", "Right Leg", "Left Leg"}
                     for _, boneName in ipairs(bodyParts) do
                         local bone = tower:FindFirstChild(boneName)
@@ -2175,42 +2173,34 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Clone skin
                     local skinClone = skinFolder:Clone()
                     skinClone.Name = "__AppliedSkin__"
                     skinClone.Parent = tower
                 
-                    -- Build name->instance map of ALL BaseParts in the clone
-                    -- so we can re-link Motor6D Part0/Part1 to cloned instances
-                    local clonePartMap = {}
-                    for _, obj in ipairs(skinClone:GetDescendants()) do
-                        if obj:IsA("BasePart") then
-                            clonePartMap[obj.Name] = clonePartMap[obj.Name] or obj
-                        end
-                    end
-                    for _, obj in ipairs(skinClone:GetChildren()) do
-                        if obj:IsA("BasePart") then
-                            clonePartMap[obj.Name] = clonePartMap[obj.Name] or obj
-                        end
+                    -- Index-based original->clone map
+                    local originalToClone = {}
+                    originalToClone[skinFolder] = skinClone
+                    local origDescendants = skinFolder:GetDescendants()
+                    local cloneDescendants = skinClone:GetDescendants()
+                    for i, orig in ipairs(origDescendants) do
+                        originalToClone[orig] = cloneDescendants[i]
                     end
                 
-                    -- Re-link ALL Motor6Ds in clone to point to cloned parts
+                    -- Re-link Motor6Ds to cloned instances
                     for _, motor in ipairs(skinClone:GetDescendants()) do
                         if motor:IsA("Motor6D") then
                             pcall(function()
-                                if motor.Part0 then
-                                    local clonedPart0 = clonePartMap[motor.Part0.Name]
-                                    if clonedPart0 then motor.Part0 = clonedPart0 end
+                                if motor.Part0 and originalToClone[motor.Part0] then
+                                    motor.Part0 = originalToClone[motor.Part0]
                                 end
-                                if motor.Part1 then
-                                    local clonedPart1 = clonePartMap[motor.Part1.Name]
-                                    if clonedPart1 then motor.Part1 = clonedPart1 end
+                                if motor.Part1 and originalToClone[motor.Part1] then
+                                    motor.Part1 = originalToClone[motor.Part1]
                                 end
                             end)
                         end
                     end
                 
-                    -- Hide/unanchor all skin parts
+                    -- Unanchor all, no collision, no query
                     for _, obj in ipairs(skinClone:GetDescendants()) do
                         if obj:IsA("BasePart") then
                             pcall(function()
@@ -2230,7 +2220,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Anchor skin HRP but make it invisible + non-queryable so tower is still clickable
+                    -- Anchor + hide skin HRP
                     local skinHRP = skinClone:FindFirstChild("HumanoidRootPart")
                     if skinHRP then
                         skinHRP.Anchored = true
@@ -2247,84 +2237,102 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         clickPart.CanQuery = false
                     end
                 
-                    -- Handle upgrade visibility
+                    -- Hide ALL skin parts first, then selectively show
+                    for _, obj in ipairs(skinClone:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            pcall(function() obj.Transparency = 1 end)
+                        end
+                    end
+                    for _, obj in ipairs(skinClone:GetChildren()) do
+                        if obj:IsA("BasePart") then
+                            pcall(function() obj.Transparency = 1 end)
+                        end
+                    end
+                
+                    -- Show body parts
+                    for _, boneName in ipairs(bodyParts) do
+                        local skinBone = skinClone:FindFirstChild(boneName)
+                        if skinBone and skinBone:IsA("BasePart") then
+                            pcall(function() skinBone.Transparency = 0 end)
+                        end
+                    end
+                
+                    -- Show SpeakerRig, StageRig, Weapon parts
+                    local showFolders = {"SpeakerRig", "StageRig", "Weapon"}
+                    for _, folderName in ipairs(showFolders) do
+                        local folder = skinClone:FindFirstChild(folderName)
+                        if folder then
+                            for _, obj in ipairs(folder:GetDescendants()) do
+                                if obj:IsA("BasePart") then
+                                    pcall(function() obj.Transparency = 0 end)
+                                end
+                            end
+                        end
+                    end
+                
+                    -- Show upgrade folders up to current level, hide Holo always
                     local skinUpgrades = skinClone:FindFirstChild("Upgrades")
                     if skinUpgrades then
                         for _, levelFolder in ipairs(skinUpgrades:GetChildren()) do
                             local levelNum = tonumber(levelFolder.Name)
-                            if levelNum then
-                                local visible = levelNum <= upgradeLevel
+                            if levelNum and levelNum <= upgradeLevel then
                                 for _, obj in ipairs(levelFolder:GetDescendants()) do
                                     if obj:IsA("BasePart") then
-                                        pcall(function() obj.Transparency = visible and 0 or 1 end)
+                                        -- skip Holo subfolder (blue ghost)
+                                        local isHolo = false
+                                        local parent = obj.Parent
+                                        while parent and parent ~= levelFolder do
+                                            if parent.Name == "Holo" then
+                                                isHolo = true
+                                                break
+                                            end
+                                            parent = parent.Parent
+                                        end
+                                        if not isHolo then
+                                            pcall(function() obj.Transparency = 0 end)
+                                        end
                                     end
                                 end
                             end
                         end
                     end
                 
-                    -- Show all top level skin parts
-                    for _, child in ipairs(skinClone:GetChildren()) do
-                        if child.Name ~= "Upgrades"
-                        and child.Name ~= "Animations"
-                        and child.Name ~= "AnimationController"
-                        and child.Name ~= "UpgradesModule"
-                        and child.Name ~= "Click"
-                        and child.Name ~= "HumanoidRootPart" then
-                            for _, obj in ipairs(child:GetDescendants()) do
-                                if obj:IsA("BasePart") then
-                                    pcall(function() obj.Transparency = 0 end)
-                                end
-                            end
-                            if child:IsA("BasePart") then
-                                pcall(function() child.Transparency = 0 end)
-                            end
-                        end
-                    end
-                
                     local towerHRP = tower:FindFirstChild("HumanoidRootPart")
                 
-                    -- Build Motor6D map by name for transform syncing
+                    -- Motor6D sync map
                     local towerMotors = {}
                     local skinMotors = {}
                 
                     for _, obj in ipairs(tower:GetDescendants()) do
                         if obj:IsA("Motor6D") then
-                            towerMotors[obj.Name] = obj
+                            towerMotors[obj] = true
                         end
                     end
-                    -- Also check HRP children
-                    for _, obj in ipairs(towerHRP:GetChildren()) do
+                
+                    -- Match by name between tower and skin
+                    local towerMotorByName = {}
+                    for _, obj in ipairs(tower:GetDescendants()) do
                         if obj:IsA("Motor6D") then
-                            towerMotors[obj.Name] = obj
+                            towerMotorByName[obj.Name] = obj
                         end
                     end
+                    local skinMotorByName = {}
                     for _, obj in ipairs(skinClone:GetDescendants()) do
                         if obj:IsA("Motor6D") then
-                            skinMotors[obj.Name] = obj
-                        end
-                    end
-                    if skinHRP then
-                        for _, obj in ipairs(skinHRP:GetChildren()) do
-                            if obj:IsA("Motor6D") then
-                                skinMotors[obj.Name] = obj
-                            end
+                            skinMotorByName[obj.Name] = skinMotorByName[obj.Name] or obj
                         end
                     end
                 
-                    -- Heartbeat: sync HRP + copy Motor6D transforms for animation
                     local conn = RunService.Heartbeat:Connect(function()
                         if not tower.Parent or not skinClone.Parent then return end
-                
                         pcall(function()
                             skinHRP.CFrame = towerHRP.CFrame
                         end)
-                
-                        for name, towerMotor in pairs(towerMotors) do
-                            local skinMotor = skinMotors[name]
-                            if skinMotor then
+                        for name, tMotor in pairs(towerMotorByName) do
+                            local sMotor = skinMotorByName[name]
+                            if sMotor then
                                 pcall(function()
-                                    skinMotor.Transform = towerMotor.Transform
+                                    sMotor.Transform = tMotor.Transform
                                 end)
                             end
                         end
