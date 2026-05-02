@@ -2135,15 +2135,21 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     "Right Arm", "Left Arm", "Right Leg", "Left Leg"
                 }
     
+                local SkinConnections = {}
+
                 local function ApplySkinToTower(tower, skinFolder, upgradeLevel)
                     local rep = tower:FindFirstChild("TowerReplicator")
                     if not rep then return end
                 
-                    -- Remove old skin
+                    -- Cleanup old skin and connections
                     local oldSkin = tower:FindFirstChild("__AppliedSkin__")
                     if oldSkin then oldSkin:Destroy() end
+                    if SkinConnections[tower] then
+                        SkinConnections[tower]:Disconnect()
+                        SkinConnections[tower] = nil
+                    end
                 
-                    -- Only hide cosmetic folders, never bones or HRP
+                    -- Hide cosmetic folders only
                     local foldersToHide = {"Upgrades", "SpeakerRig", "DJRig"}
                     for _, folderName in ipairs(foldersToHide) do
                         local folder = tower:FindFirstChild(folderName)
@@ -2166,12 +2172,31 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Clone skin and parent to tower
+                    -- Clone skin
                     local skinClone = skinFolder:Clone()
                     skinClone.Name = "__AppliedSkin__"
+                
+                    -- Unanchor ALL skin parts so RenderStepped can move them freely
+                    for _, obj in ipairs(skinClone:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            pcall(function()
+                                obj.Anchored = false
+                                obj.CanCollide = false
+                            end)
+                        end
+                    end
+                    for _, obj in ipairs(skinClone:GetChildren()) do
+                        if obj:IsA("BasePart") then
+                            pcall(function()
+                                obj.Anchored = false
+                                obj.CanCollide = false
+                            end)
+                        end
+                    end
+                
                     skinClone.Parent = tower
                 
-                    -- Show only skin upgrade levels up to current
+                    -- Handle skin upgrade visibility
                     local skinUpgrades = skinClone:FindFirstChild("Upgrades")
                     if skinUpgrades then
                         for _, levelFolder in ipairs(skinUpgrades:GetChildren()) do
@@ -2187,7 +2212,7 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Show all other top level skin parts
+                    -- Show all top level skin parts
                     for _, child in ipairs(skinClone:GetChildren()) do
                         if child.Name ~= "Upgrades" and child.Name ~= "Animations" then
                             for _, obj in ipairs(child:GetDescendants()) do
@@ -2201,23 +2226,40 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    local towerHRP = tower:FindFirstChild("HumanoidRootPart")
-                    local skinHRP = skinClone:FindFirstChild("HumanoidRootPart")
-                
-                    if not towerHRP or not skinHRP then
-                        Window:Notify({Title = "Skin Modifier", Desc = "HRP missing on tower or skin!", Time = 4, Type = "error"})
-                        return
+                    -- Build bone lookup tables
+                    local towerBones = {}
+                    local skinBones = {}
+                    for _, boneName in ipairs(CharacterBones) do
+                        towerBones[boneName] = tower:FindFirstChild(boneName)
+                        skinBones[boneName] = skinClone:FindFirstChild(boneName)
                     end
                 
-                    -- ONLY weld skin HRP to tower HRP
-                    -- skin's own Motor6D joints will position all other parts correctly
-                    pcall(function()
-                        skinHRP.Anchored = false
-                        local w = Instance.new("WeldConstraint")
-                        w.Name = "__SkinWeld__"
-                        w.Part0 = towerHRP
-                        w.Part1 = skinHRP
-                        w.Parent = towerHRP
+                    -- Every frame: sync skin bone CFrames to tower bone CFrames
+                    -- skin's internal WeldConstraints keep clothes attached to bones
+                    local conn = RunService.RenderStepped:Connect(function()
+                        if not tower.Parent or not skinClone.Parent then return end
+                        for _, boneName in ipairs(CharacterBones) do
+                            local towerBone = towerBones[boneName]
+                            local skinBone = skinBones[boneName]
+                            if towerBone and skinBone then
+                                pcall(function()
+                                    skinBone.CFrame = towerBone.CFrame
+                                end)
+                            end
+                        end
+                    end)
+                
+                    SkinConnections[tower] = conn
+                
+                    -- Cleanup when tower removed
+                    tower.AncestryChanged:Connect(function()
+                        if not tower.Parent then
+                            if SkinConnections[tower] then
+                                SkinConnections[tower]:Disconnect()
+                                SkinConnections[tower] = nil
+                            end
+                            if skinClone.Parent then skinClone:Destroy() end
+                        end
                     end)
                 end
     
@@ -2278,21 +2320,19 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                 and rep:GetAttribute("Name") == SkinTowerName
                 and rep:GetAttribute("OwnerId") == LocalPlayer.UserId then
     
+                    -- Stop RenderStepped sync
+                    if SkinConnections[tower] then
+                        SkinConnections[tower]:Disconnect()
+                        SkinConnections[tower] = nil
+                    end
+    
                     -- Remove skin clone
                     local oldSkin = tower:FindFirstChild("__AppliedSkin__")
                     if oldSkin then oldSkin:Destroy() end
     
-                    -- Remove welds we added on HRP
-                    local hrp = tower:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        for _, w in ipairs(hrp:GetChildren()) do
-                            if w:IsA("WeldConstraint") then w:Destroy() end
-                        end
-                    end
-    
                     -- Restore all hidden parts
                     for _, obj in ipairs(tower:GetDescendants()) do
-                        if obj:IsA("BasePart") and obj.Name ~= "HumanoidRootPart" then
+                        if obj:IsA("BasePart") then
                             pcall(function() obj.Transparency = 0 end)
                         end
                     end
