@@ -2112,101 +2112,108 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             end
     
             task.spawn(function()
-                -- Step 1: fire the remote to lazy-load the skin into ReplicatedStorage
+                -- Step 1: trigger lazy load
                 pcall(function()
                     RemoteEvent:FireServer("Streaming", "SelectTower", SkinTowerName, SkinName)
                 end)
     
-                -- Step 2: wait for the skin folder to appear (timeout 10s)
+                -- Step 2: wait for skin folder
                 local skinFolder = nil
                 local deadline = os.clock() + 10
                 repeat
                     task.wait(0.2)
-                    local assets = ReplicatedStorage:FindFirstChild("Assets")
-                    local troops = assets and assets:FindFirstChild("Troops")
-                    local tower = troops and troops:FindFirstChild(SkinTowerName)
-                    local skins = tower and tower:FindFirstChild("Skins")
-                    skinFolder = skins and skins:FindFirstChild(SkinName)
+                    local ok, result = pcall(function()
+                        return ReplicatedStorage.Assets.Troops[SkinTowerName].Skins[SkinName]
+                    end)
+                    if ok and result then skinFolder = result end
                 until skinFolder or os.clock() > deadline
     
                 if not skinFolder then
-                    return Window:Notify({Title = "Skin Modifier", Desc = "Skin not found! Check the name and try again.", Time = 4, Type = "error"})
+                    return Window:Notify({Title = "Skin Modifier", Desc = "Skin '" .. SkinName .. "' not found! Check the name.", Time = 4, Type = "error"})
                 end
     
-                -- Step 3: build a flat map of part name -> part from the skin folder
-                local skinParts = {}
-                local function IndexSkinParts(folder)
-                    for _, obj in ipairs(folder:GetDescendants()) do
-                        if obj:IsA("BasePart") then
-                            skinParts[obj.Name] = obj
-                        end
-                    end
-                end
-                IndexSkinParts(skinFolder)
-    
-                -- Step 4: find all placed towers matching tower name + owner
                 local swappedTowers = 0
-                local swappedParts = 0
     
                 for _, tower in ipairs(workspace.Towers:GetChildren()) do
                     local rep = tower:FindFirstChild("TowerReplicator")
                     if rep
                     and rep:GetAttribute("Name") == SkinTowerName
                     and rep:GetAttribute("OwnerId") == LocalPlayer.UserId then
-                        -- swap matching parts
-                        for _, part in ipairs(tower:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                local skinPart = skinParts[part.Name]
-                                if skinPart then
-                                    pcall(function()
-                                        -- copy visual properties only
-                                        part.Color = skinPart.Color
-                                        part.Material = skinPart.Material
-                                        part.Reflectance = skinPart.Reflectance
-                                        part.Transparency = skinPart.Transparency
     
-                                        -- swap mesh if both have one
-                                        local srcMesh = skinPart:FindFirstChildOfClass("SpecialMesh")
-                                        local dstMesh = part:FindFirstChildOfClass("SpecialMesh")
-                                        if srcMesh and dstMesh then
-                                            dstMesh.MeshId = srcMesh.MeshId
-                                            dstMesh.TextureId = srcMesh.TextureId
-                                            dstMesh.Scale = srcMesh.Scale
-                                            dstMesh.MeshType = srcMesh.MeshType
-                                        end
+                        local hrp = tower:FindFirstChild("HumanoidRootPart")
+                        if not hrp then continue end
     
-                                        -- swap surface appearance if present
-                                        local srcSA = skinPart:FindFirstChildOfClass("SurfaceAppearance")
-                                        local dstSA = part:FindFirstChildOfClass("SurfaceAppearance")
-                                        if srcSA then
-                                            if not dstSA then
-                                                dstSA = Instance.new("SurfaceAppearance")
-                                                dstSA.Parent = part
-                                            end
-                                            dstSA.ColorMap = srcSA.ColorMap
-                                            dstSA.NormalMap = srcSA.NormalMap
-                                            dstSA.RoughnessMap = srcSA.RoughnessMap
-                                            dstSA.MetalnessMap = srcSA.MetalnessMap
-                                        end
+                        -- Remove any previously applied skin clone
+                        local oldSkin = tower:FindFirstChild("__AppliedSkin__")
+                        if oldSkin then oldSkin:Destroy() end
     
-                                        swappedParts += 1
-                                    end)
-                                end
+                        -- Hide all existing BaseParts in the tower
+                        local hiddenParts = {}
+                        for _, obj in ipairs(tower:GetDescendants()) do
+                            if obj:IsA("BasePart") and obj.Name ~= "HumanoidRootPart" then
+                                pcall(function()
+                                    obj.Transparency = 1
+                                    hiddenParts[obj] = true
+                                end)
                             end
                         end
+    
+                        -- Clone the skin and parent it into the tower
+                        local skinClone = skinFolder:Clone()
+                        skinClone.Name = "__AppliedSkin__"
+                        skinClone.Parent = tower
+    
+                        -- Weld skin's HumanoidRootPart (or first BasePart) to tower's HumanoidRootPart
+                        local skinHRP = skinClone:FindFirstChild("HumanoidRootPart")
+                        if skinHRP then
+                            skinHRP.CFrame = hrp.CFrame
+                            skinHRP.Anchored = false
+    
+                            local weld = Instance.new("WeldConstraint")
+                            weld.Part0 = hrp
+                            weld.Part1 = skinHRP
+                            weld.Parent = hrp
+                        end
+    
+                        -- Weld all other skin BaseParts that aren't already welded
+                        for _, obj in ipairs(skinClone:GetDescendants()) do
+                            if obj:IsA("BasePart") and obj ~= skinHRP then
+                                pcall(function()
+                                    obj.Anchored = false
+                                    -- only weld if no existing Motor6D or WeldConstraint
+                                    local hasJoint = obj:FindFirstChildOfClass("Motor6D")
+                                        or obj:FindFirstChildOfClass("WeldConstraint")
+                                        or obj:FindFirstChildOfClass("Weld")
+                                    if not hasJoint then
+                                        -- check if parent has a motor pointing to this part
+                                        local parentHasMotor = false
+                                        if obj.Parent and obj.Parent:IsA("BasePart") then
+                                            for _, c in ipairs(obj.Parent:GetChildren()) do
+                                                if (c:IsA("Motor6D") or c:IsA("WeldConstraint")) and (c.Part1 == obj or c.Part0 == obj) then
+                                                    parentHasMotor = true
+                                                    break
+                                                end
+                                            end
+                                        end
+                                        if not parentHasMotor then
+                                            local w = Instance.new("WeldConstraint")
+                                            w.Part0 = skinHRP or hrp
+                                            w.Part1 = obj
+                                            w.Parent = obj
+                                        end
+                                    end
+                                end)
+                            end
+                        end
+    
                         swappedTowers += 1
                     end
                 end
     
                 if swappedTowers == 0 then
-                    Window:Notify({Title = "Skin Modifier", Desc = "No placed " .. SkinTowerName .. " found! Place one first.", Time = 4, Type = "error"})
+                    Window:Notify({Title = "Skin Modifier", Desc = "No placed " .. SkinTowerName .. " found!", Time = 4, Type = "error"})
                 else
-                    Window:Notify({
-                        Title = "Skin Modifier",
-                        Desc = "Applied " .. SkinName .. " to " .. swappedTowers .. " tower(s) | " .. swappedParts .. " parts swapped!",
-                        Time = 4,
-                        Type = "normal"
-                    })
+                    Window:Notify({Title = "Skin Modifier", Desc = "Applied " .. SkinName .. " to " .. swappedTowers .. " tower(s)!", Time = 4, Type = "normal"})
                 end
             end)
         end
@@ -2214,80 +2221,43 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
     
     Interactive:Button({
         Title = "Reset Skin",
-        Desc = "Reverts to the default skin on all placed towers of selected type",
+        Desc = "Reverts to the default skin",
         Callback = function()
             if not SkinTowerName or SkinTowerName == "None" then
                 return Window:Notify({Title = "Skin Modifier", Desc = "Select a tower first!", Time = 3, Type = "error"})
             end
     
-            task.spawn(function()
-                -- load Default skin same way
-                pcall(function()
-                    RemoteEvent:FireServer("Streaming", "SelectTower", SkinTowerName, "Default")
-                end)
+            local count = 0
+            for _, tower in ipairs(workspace.Towers:GetChildren()) do
+                local rep = tower:FindFirstChild("TowerReplicator")
+                if rep
+                and rep:GetAttribute("Name") == SkinTowerName
+                and rep:GetAttribute("OwnerId") == LocalPlayer.UserId then
     
-                local skinFolder = nil
-                local deadline = os.clock() + 10
-                repeat
-                    task.wait(0.2)
-                    local assets = ReplicatedStorage:FindFirstChild("Assets")
-                    local troops = assets and assets:FindFirstChild("Troops")
-                    local tower = troops and troops:FindFirstChild(SkinTowerName)
-                    local skins = tower and tower:FindFirstChild("Skins")
-                    skinFolder = skins and skins:FindFirstChild("Default")
-                until skinFolder or os.clock() > deadline
+                    -- Remove skin clone
+                    local oldSkin = tower:FindFirstChild("__AppliedSkin__")
+                    if oldSkin then oldSkin:Destroy() end
     
-                if not skinFolder then
-                    return Window:Notify({Title = "Skin Modifier", Desc = "Default skin not found!", Time = 4, Type = "error"})
-                end
-    
-                local skinParts = {}
-                for _, obj in ipairs(skinFolder:GetDescendants()) do
-                    if obj:IsA("BasePart") then
-                        skinParts[obj.Name] = obj
-                    end
-                end
-    
-                local swappedTowers = 0
-                for _, tower in ipairs(workspace.Towers:GetChildren()) do
-                    local rep = tower:FindFirstChild("TowerReplicator")
-                    if rep
-                    and rep:GetAttribute("Name") == SkinTowerName
-                    and rep:GetAttribute("OwnerId") == LocalPlayer.UserId then
-                        for _, part in ipairs(tower:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                local skinPart = skinParts[part.Name]
-                                if skinPart then
-                                    pcall(function()
-                                        part.Color = skinPart.Color
-                                        part.Material = skinPart.Material
-                                        part.Reflectance = skinPart.Reflectance
-                                        part.Transparency = skinPart.Transparency
-                                        local srcMesh = skinPart:FindFirstChildOfClass("SpecialMesh")
-                                        local dstMesh = part:FindFirstChildOfClass("SpecialMesh")
-                                        if srcMesh and dstMesh then
-                                            dstMesh.MeshId = srcMesh.MeshId
-                                            dstMesh.TextureId = srcMesh.TextureId
-                                            dstMesh.Scale = srcMesh.Scale
-                                            dstMesh.MeshType = srcMesh.MeshType
-                                        end
-                                        local dstSA = part:FindFirstChildOfClass("SurfaceAppearance")
-                                        if dstSA then dstSA:Destroy() end
-                                    end)
-                                end
-                            end
+                    -- Remove welds we added on HRP
+                    local hrp = tower:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        for _, w in ipairs(hrp:GetChildren()) do
+                            if w:IsA("WeldConstraint") then w:Destroy() end
                         end
-                        swappedTowers += 1
                     end
-                end
     
-                Window:Notify({
-                    Title = "Skin Modifier",
-                    Desc = "Reset " .. swappedTowers .. " tower(s) to Default skin.",
-                    Time = 3,
-                    Type = "normal"
-                })
-            end)
+                    -- Restore all hidden parts
+                    for _, obj in ipairs(tower:GetDescendants()) do
+                        if obj:IsA("BasePart") and obj.Name ~= "HumanoidRootPart" then
+                            pcall(function() obj.Transparency = 0 end)
+                        end
+                    end
+    
+                    count += 1
+                end
+            end
+    
+            Window:Notify({Title = "Skin Modifier", Desc = "Reset " .. count .. " tower(s) to default.", Time = 3, Type = "normal"})
         end
     })
 
