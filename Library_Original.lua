@@ -1038,7 +1038,7 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Duxii
 
 local Window = Library:Window({
     Title = "Aether Hub",
-    Desc = "v5",
+    Desc = "v6",
     Theme = "Dark",
     DiscordLink = "https://discord.gg/autostrat",
     Icon = 100189470230468,
