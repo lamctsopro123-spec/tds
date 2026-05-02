@@ -1038,7 +1038,7 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Duxii
 
 local Window = Library:Window({
     Title = "Aether Hub",
-    Desc = "v8",
+    Desc = "v9",
     Theme = "Dark",
     DiscordLink = "https://discord.gg/autostrat",
     Icon = 100189470230468,
@@ -2141,7 +2141,6 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     local rep = tower:FindFirstChild("TowerReplicator")
                     if not rep then return end
                 
-                    -- Cleanup old
                     local oldSkin = tower:FindFirstChild("__AppliedSkin__")
                     if oldSkin then oldSkin:Destroy() end
                     if SkinConnections[tower] then
@@ -2181,21 +2180,43 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                     skinClone.Name = "__AppliedSkin__"
                     skinClone.Parent = tower
                 
-                    -- Make Click part invisible and non-collidable so tower interaction works
-                    local clickPart = skinClone:FindFirstChild("Click")
-                    if clickPart then
-                        clickPart.Transparency = 1
-                        clickPart.CanCollide = false
-                        clickPart.CanQuery = false
+                    -- Build name->instance map of ALL BaseParts in the clone
+                    -- so we can re-link Motor6D Part0/Part1 to cloned instances
+                    local clonePartMap = {}
+                    for _, obj in ipairs(skinClone:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            clonePartMap[obj.Name] = clonePartMap[obj.Name] or obj
+                        end
+                    end
+                    for _, obj in ipairs(skinClone:GetChildren()) do
+                        if obj:IsA("BasePart") then
+                            clonePartMap[obj.Name] = clonePartMap[obj.Name] or obj
+                        end
                     end
                 
-                    -- Anchor ONLY skin HRP, unanchor everything else
-                    -- Motor6D chains will position all other parts automatically
+                    -- Re-link ALL Motor6Ds in clone to point to cloned parts
+                    for _, motor in ipairs(skinClone:GetDescendants()) do
+                        if motor:IsA("Motor6D") then
+                            pcall(function()
+                                if motor.Part0 then
+                                    local clonedPart0 = clonePartMap[motor.Part0.Name]
+                                    if clonedPart0 then motor.Part0 = clonedPart0 end
+                                end
+                                if motor.Part1 then
+                                    local clonedPart1 = clonePartMap[motor.Part1.Name]
+                                    if clonedPart1 then motor.Part1 = clonedPart1 end
+                                end
+                            end)
+                        end
+                    end
+                
+                    -- Hide/unanchor all skin parts
                     for _, obj in ipairs(skinClone:GetDescendants()) do
                         if obj:IsA("BasePart") then
                             pcall(function()
                                 obj.Anchored = false
                                 obj.CanCollide = false
+                                obj.CanQuery = false
                             end)
                         end
                     end
@@ -2204,13 +2225,26 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                             pcall(function()
                                 obj.Anchored = false
                                 obj.CanCollide = false
+                                obj.CanQuery = false
                             end)
                         end
                     end
                 
+                    -- Anchor skin HRP but make it invisible + non-queryable so tower is still clickable
                     local skinHRP = skinClone:FindFirstChild("HumanoidRootPart")
                     if skinHRP then
                         skinHRP.Anchored = true
+                        skinHRP.Transparency = 1
+                        skinHRP.CanCollide = false
+                        skinHRP.CanQuery = false
+                    end
+                
+                    -- Hide Click part
+                    local clickPart = skinClone:FindFirstChild("Click")
+                    if clickPart then
+                        clickPart.Transparency = 1
+                        clickPart.CanCollide = false
+                        clickPart.CanQuery = false
                     end
                 
                     -- Handle upgrade visibility
@@ -2229,13 +2263,14 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                         end
                     end
                 
-                    -- Show all top level skin parts except hidden ones
+                    -- Show all top level skin parts
                     for _, child in ipairs(skinClone:GetChildren()) do
-                        if child.Name ~= "Upgrades" 
-                        and child.Name ~= "Animations" 
+                        if child.Name ~= "Upgrades"
+                        and child.Name ~= "Animations"
                         and child.Name ~= "AnimationController"
                         and child.Name ~= "UpgradesModule"
-                        and child.Name ~= "Click" then
+                        and child.Name ~= "Click"
+                        and child.Name ~= "HumanoidRootPart" then
                             for _, obj in ipairs(child:GetDescendants()) do
                                 if obj:IsA("BasePart") then
                                     pcall(function() obj.Transparency = 0 end)
@@ -2249,12 +2284,17 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                 
                     local towerHRP = tower:FindFirstChild("HumanoidRootPart")
                 
-                    -- Build Motor6D map for tower and skin by name
-                    -- We'll copy Transform values so skin follows tower animations
+                    -- Build Motor6D map by name for transform syncing
                     local towerMotors = {}
                     local skinMotors = {}
                 
                     for _, obj in ipairs(tower:GetDescendants()) do
+                        if obj:IsA("Motor6D") then
+                            towerMotors[obj.Name] = obj
+                        end
+                    end
+                    -- Also check HRP children
+                    for _, obj in ipairs(towerHRP:GetChildren()) do
                         if obj:IsA("Motor6D") then
                             towerMotors[obj.Name] = obj
                         end
@@ -2264,17 +2304,22 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
                             skinMotors[obj.Name] = obj
                         end
                     end
+                    if skinHRP then
+                        for _, obj in ipairs(skinHRP:GetChildren()) do
+                            if obj:IsA("Motor6D") then
+                                skinMotors[obj.Name] = obj
+                            end
+                        end
+                    end
                 
-                    -- Heartbeat: sync HRP position + copy animation transforms
+                    -- Heartbeat: sync HRP + copy Motor6D transforms for animation
                     local conn = RunService.Heartbeat:Connect(function()
                         if not tower.Parent or not skinClone.Parent then return end
                 
-                        -- Sync skin HRP to tower HRP
                         pcall(function()
                             skinHRP.CFrame = towerHRP.CFrame
                         end)
                 
-                        -- Copy Motor6D transforms from tower to skin (drives character animation)
                         for name, towerMotor in pairs(towerMotors) do
                             local skinMotor = skinMotors[name]
                             if skinMotor then
