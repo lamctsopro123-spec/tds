@@ -2074,6 +2074,222 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
             })
         end
     })
+    Interactive:Section({Title = "Skin Modifier"})
+
+    local SkinTowerName = nil
+    local SkinName = nil
+    
+    Interactive:Dropdown({
+        Title = "Tower",
+        Desc = "Select which tower to reskin",
+        List = CurrentEquippedTowers,
+        Value = CurrentEquippedTowers[1],
+        Callback = function(choice)
+            SkinTowerName = choice
+        end
+    })
+    
+    Interactive:Textbox({
+        Title = "Skin Name",
+        Desc = "Exact skin name (e.g. Neon Rave, Narrator)",
+        Placeholder = "Skin name here",
+        Value = "",
+        ClearTextOnFocus = false,
+        Callback = function(text)
+            SkinName = text ~= "" and text or nil
+        end
+    })
+    
+    Interactive:Button({
+        Title = "Apply Skin",
+        Desc = "Applies skin to all your placed towers of that type (client-side only)",
+        Callback = function()
+            if not SkinTowerName or SkinTowerName == "None" then
+                return Window:Notify({Title = "Skin Modifier", Desc = "Select a tower first!", Time = 3, Type = "error"})
+            end
+            if not SkinName or SkinName == "" then
+                return Window:Notify({Title = "Skin Modifier", Desc = "Enter a skin name first!", Time = 3, Type = "error"})
+            end
+    
+            task.spawn(function()
+                -- Step 1: fire the remote to lazy-load the skin into ReplicatedStorage
+                pcall(function()
+                    RemoteEvent:FireServer("Streaming", "SelectTower", SkinTowerName, SkinName)
+                end)
+    
+                -- Step 2: wait for the skin folder to appear (timeout 10s)
+                local skinFolder = nil
+                local deadline = os.clock() + 10
+                repeat
+                    task.wait(0.2)
+                    local assets = ReplicatedStorage:FindFirstChild("Assets")
+                    local troops = assets and assets:FindFirstChild("Troops")
+                    local tower = troops and troops:FindFirstChild(SkinTowerName)
+                    local skins = tower and tower:FindFirstChild("Skins")
+                    skinFolder = skins and skins:FindFirstChild(SkinName)
+                until skinFolder or os.clock() > deadline
+    
+                if not skinFolder then
+                    return Window:Notify({Title = "Skin Modifier", Desc = "Skin not found! Check the name and try again.", Time = 4, Type = "error"})
+                end
+    
+                -- Step 3: build a flat map of part name -> part from the skin folder
+                local skinParts = {}
+                local function IndexSkinParts(folder)
+                    for _, obj in ipairs(folder:GetDescendants()) do
+                        if obj:IsA("BasePart") then
+                            skinParts[obj.Name] = obj
+                        end
+                    end
+                end
+                IndexSkinParts(skinFolder)
+    
+                -- Step 4: find all placed towers matching tower name + owner
+                local swappedTowers = 0
+                local swappedParts = 0
+    
+                for _, tower in ipairs(workspace.Towers:GetChildren()) do
+                    local rep = tower:FindFirstChild("TowerReplicator")
+                    if rep
+                    and rep:GetAttribute("Name") == SkinTowerName
+                    and rep:GetAttribute("OwnerId") == LocalPlayer.UserId then
+                        -- swap matching parts
+                        for _, part in ipairs(tower:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                local skinPart = skinParts[part.Name]
+                                if skinPart then
+                                    pcall(function()
+                                        -- copy visual properties only
+                                        part.Color = skinPart.Color
+                                        part.Material = skinPart.Material
+                                        part.Reflectance = skinPart.Reflectance
+                                        part.Transparency = skinPart.Transparency
+    
+                                        -- swap mesh if both have one
+                                        local srcMesh = skinPart:FindFirstChildOfClass("SpecialMesh")
+                                        local dstMesh = part:FindFirstChildOfClass("SpecialMesh")
+                                        if srcMesh and dstMesh then
+                                            dstMesh.MeshId = srcMesh.MeshId
+                                            dstMesh.TextureId = srcMesh.TextureId
+                                            dstMesh.Scale = srcMesh.Scale
+                                            dstMesh.MeshType = srcMesh.MeshType
+                                        end
+    
+                                        -- swap surface appearance if present
+                                        local srcSA = skinPart:FindFirstChildOfClass("SurfaceAppearance")
+                                        local dstSA = part:FindFirstChildOfClass("SurfaceAppearance")
+                                        if srcSA then
+                                            if not dstSA then
+                                                dstSA = Instance.new("SurfaceAppearance")
+                                                dstSA.Parent = part
+                                            end
+                                            dstSA.ColorMap = srcSA.ColorMap
+                                            dstSA.NormalMap = srcSA.NormalMap
+                                            dstSA.RoughnessMap = srcSA.RoughnessMap
+                                            dstSA.MetalnessMap = srcSA.MetalnessMap
+                                        end
+    
+                                        swappedParts += 1
+                                    end)
+                                end
+                            end
+                        end
+                        swappedTowers += 1
+                    end
+                end
+    
+                if swappedTowers == 0 then
+                    Window:Notify({Title = "Skin Modifier", Desc = "No placed " .. SkinTowerName .. " found! Place one first.", Time = 4, Type = "error"})
+                else
+                    Window:Notify({
+                        Title = "Skin Modifier",
+                        Desc = "Applied " .. SkinName .. " to " .. swappedTowers .. " tower(s) | " .. swappedParts .. " parts swapped!",
+                        Time = 4,
+                        Type = "normal"
+                    })
+                end
+            end)
+        end
+    })
+    
+    Interactive:Button({
+        Title = "Reset Skin",
+        Desc = "Reverts to the default skin on all placed towers of selected type",
+        Callback = function()
+            if not SkinTowerName or SkinTowerName == "None" then
+                return Window:Notify({Title = "Skin Modifier", Desc = "Select a tower first!", Time = 3, Type = "error"})
+            end
+    
+            task.spawn(function()
+                -- load Default skin same way
+                pcall(function()
+                    RemoteEvent:FireServer("Streaming", "SelectTower", SkinTowerName, "Default")
+                end)
+    
+                local skinFolder = nil
+                local deadline = os.clock() + 10
+                repeat
+                    task.wait(0.2)
+                    local assets = ReplicatedStorage:FindFirstChild("Assets")
+                    local troops = assets and assets:FindFirstChild("Troops")
+                    local tower = troops and troops:FindFirstChild(SkinTowerName)
+                    local skins = tower and tower:FindFirstChild("Skins")
+                    skinFolder = skins and skins:FindFirstChild("Default")
+                until skinFolder or os.clock() > deadline
+    
+                if not skinFolder then
+                    return Window:Notify({Title = "Skin Modifier", Desc = "Default skin not found!", Time = 4, Type = "error"})
+                end
+    
+                local skinParts = {}
+                for _, obj in ipairs(skinFolder:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        skinParts[obj.Name] = obj
+                    end
+                end
+    
+                local swappedTowers = 0
+                for _, tower in ipairs(workspace.Towers:GetChildren()) do
+                    local rep = tower:FindFirstChild("TowerReplicator")
+                    if rep
+                    and rep:GetAttribute("Name") == SkinTowerName
+                    and rep:GetAttribute("OwnerId") == LocalPlayer.UserId then
+                        for _, part in ipairs(tower:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                local skinPart = skinParts[part.Name]
+                                if skinPart then
+                                    pcall(function()
+                                        part.Color = skinPart.Color
+                                        part.Material = skinPart.Material
+                                        part.Reflectance = skinPart.Reflectance
+                                        part.Transparency = skinPart.Transparency
+                                        local srcMesh = skinPart:FindFirstChildOfClass("SpecialMesh")
+                                        local dstMesh = part:FindFirstChildOfClass("SpecialMesh")
+                                        if srcMesh and dstMesh then
+                                            dstMesh.MeshId = srcMesh.MeshId
+                                            dstMesh.TextureId = srcMesh.TextureId
+                                            dstMesh.Scale = srcMesh.Scale
+                                            dstMesh.MeshType = srcMesh.MeshType
+                                        end
+                                        local dstSA = part:FindFirstChildOfClass("SurfaceAppearance")
+                                        if dstSA then dstSA:Destroy() end
+                                    end)
+                                end
+                            end
+                        end
+                        swappedTowers += 1
+                    end
+                end
+    
+                Window:Notify({
+                    Title = "Skin Modifier",
+                    Desc = "Reset " .. swappedTowers .. " tower(s) to Default skin.",
+                    Time = 3,
+                    Type = "normal"
+                })
+            end)
+        end
+    })
 
     Interactive:Section({Title = "TimeScale Management"})
     
