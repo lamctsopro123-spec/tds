@@ -1764,10 +1764,10 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
     local function ParseNumber(val)
         if type(val) == "number" then return val end
         if type(val) == "string" then
-            local n = tonumber((val:gsub(",", ""))) -- extra () fixes the base out of range crash
+            local n = tonumber((val:gsub(",", ""))) -- () fixes base out of range
             if n then return n end
         end
-        if type(val) == "table" and val.get then
+        if type(val) == "table" and type(val.get) == "function" then -- type check fixes thread call crash
             local ok, v = pcall(function() return val:get() end)
             if ok then return ParseNumber(v) end
         end
