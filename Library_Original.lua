@@ -1,4 +1,19 @@
 local Globals = getgenv()
+-- Suppress NoYield dialog stutters
+local _error = error
+getgenv().error = newcclosure(function(msg, ...)
+    if type(msg) == "string" and msg:find("yield inside changed event") then
+        return
+    end
+    return _error(msg, ...)
+end)
+
+local _warn = warn
+getgenv().warn = newcclosure(function(...)
+    local msg = tostring(select(1, ...))
+    if msg:find("yield inside changed event") then return end
+    return _warn(...)
+end)
 
 local PlayersService = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
@@ -1748,8 +1763,14 @@ local Interactive = Window:Tab({Title = "Interactive", Icon = "mouse-pointer-cli
 
     local function ParseNumber(val)
         if type(val) == "number" then return val end
-        if type(val) == "string" then local n = tonumber(val:gsub(",","")) if n then return n end end
-        if type(val) == "table" and val.get then local ok,v = pcall(function() return val:get() end); if ok then return ParseNumber(v) end end
+        if type(val) == "string" then
+            local n = tonumber((val:gsub(",", ""))) -- extra () fixes the base out of range crash
+            if n then return n end
+        end
+        if type(val) == "table" and val.get then
+            local ok, v = pcall(function() return val:get() end)
+            if ok then return ParseNumber(v) end
+        end
         return nil
     end
 
