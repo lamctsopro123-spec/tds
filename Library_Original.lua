@@ -250,7 +250,12 @@ local function UpdateStackerLabel()
         or Color3.fromRGB(200, 200, 200)
 end
 
-UpdateStackerLabel()
+task.spawn(function()
+    while true do
+        UpdateStackerLabel()
+        task.wait(0.2)
+    end
+end)
 
 -- // stacker keybinds
 local FKeyMap = {
@@ -2088,7 +2093,6 @@ RunService.RenderStepped:Connect(function()
     end
 
     -- Stacker label: only updates when values differ (guarded inside)
-    UpdateStackerLabel()
 end)
 
 -- Path visuals throttled to 10 Hz instead of every frame
@@ -2353,14 +2357,17 @@ local function TriggerRestart()
     task.wait(3); RunVoteSkip()
 end
 
+local _waveLabelCache = nil
 local function GetCurrentWave()
-    local label
-    repeat
-        task.wait(0.5)
-        label = PlayerGui:FindFirstChild("ReactGameTopGameDisplay",true)
-            and PlayerGui.ReactGameTopGameDisplay.Frame.wave.container:FindFirstChild("value")
-    until label ~= nil
-    return tonumber(label.Text:match("(%d+)")) or 0
+    if not (_waveLabelCache and _waveLabelCache.Parent) then
+        local display = PlayerGui:FindFirstChild("ReactGameTopGameDisplay")
+        local frame   = display and display:FindFirstChild("Frame")
+        local wave    = frame and frame:FindFirstChild("wave")
+        local cont    = wave and wave:FindFirstChild("container")
+        _waveLabelCache = cont and cont:FindFirstChild("value")
+    end
+    if not _waveLabelCache then task.wait(0.5); return 0 end
+    return tonumber(_waveLabelCache.Text:match("(%d+)")) or 0
 end
 
 local function DoPlaceTower(TName, TPos)
@@ -2767,22 +2774,35 @@ local function StartBackToLobby()
     end)
 end
 
+-- Replace StartAntiLag
 local function StartAntiLag()
-    if AntiLagRunning then return end; AntiLagRunning=true
-    local settings=settings().Rendering; settings.QualityLevel=Enum.QualityLevel.Level01
+    if AntiLagRunning then return end; AntiLagRunning = true
+    local renderSettings = settings().Rendering
+    renderSettings.QualityLevel = Enum.QualityLevel.Level01
     task.spawn(function()
         while Globals.AntiLag do
-            local TowersFolder=workspace:FindFirstChild("Towers"); local ClientUnits=workspace:FindFirstChild("ClientUnits")
+            local TowersFolder  = workspace:FindFirstChild("Towers")
+            local ClientUnits   = workspace:FindFirstChild("ClientUnits")
             if TowersFolder then
-                for _,tower in ipairs(TowersFolder:GetChildren()) do
-                    local anims=tower:FindFirstChild("Animations"); local weapon=tower:FindFirstChild("Weapon"); local projectiles=tower:FindFirstChild("Projectiles")
-                    if anims then anims:Destroy() end; if projectiles then projectiles:Destroy() end; if weapon then weapon:Destroy() end
+                for _, tower in ipairs(TowersFolder:GetChildren()) do
+                    local anims      = tower:FindFirstChild("Animations")
+                    local weapon     = tower:FindFirstChild("Weapon")
+                    local projectiles = tower:FindFirstChild("Projectiles")
+                    if anims       then anims:Destroy()       end
+                    if projectiles then projectiles:Destroy() end
+                    if weapon      then weapon:Destroy()      end
+                    task.wait()   -- spread GC across frames
                 end
             end
-            if ClientUnits then for _,unit in ipairs(ClientUnits:GetChildren()) do unit:Destroy() end end
+            if ClientUnits then
+                for _, unit in ipairs(ClientUnits:GetChildren()) do
+                    unit:Destroy()
+                    task.wait()   -- spread GC across frames
+                end
+            end
             task.wait(0.5)
         end
-        AntiLagRunning=false
+        AntiLagRunning = false
     end)
 end
 
@@ -2802,6 +2822,16 @@ local _cachedNecromancers = {}
 local _cachedMercBases = {}
 local _cachedMilBases = {}
 local _cachedFarms = {}
+
+local _rebuildScheduled = false
+local function ScheduleRebuild()
+    if _rebuildScheduled then return end
+    _rebuildScheduled = true
+    task.delay(0.25, function()
+        _rebuildScheduled = false
+        RebuildTowerCaches()
+    end)
+end
 
 local function RebuildTowerCaches()
     _cachedCommanders = {}; _cachedDJBooths = {}; _cachedNecromancers = {}
@@ -2831,19 +2861,18 @@ task.spawn(function()
     RebuildTowerCaches()
 
     folder.ChildAdded:Connect(function(tower)
-        task.wait(0.5) -- wait for TowerReplicator to be added
-        RebuildTowerCaches()
-        -- Also hook upgrade changes on this tower
+        task.wait(0.5)
+        ScheduleRebuild()                          -- was: RebuildTowerCaches()
         local rep = tower:FindFirstChild("TowerReplicator")
         if rep then
             rep:GetAttributeChangedSignal("Upgrade"):Connect(function()
-                task.wait(0.1); RebuildTowerCaches()
+                task.wait(0.1); ScheduleRebuild() -- was: RebuildTowerCaches()
             end)
         end
     end)
 
     folder.ChildRemoved:Connect(function()
-        task.wait(0.1); RebuildTowerCaches()
+        task.wait(0.1); ScheduleRebuild()
     end)
 end)
 
@@ -2909,13 +2938,18 @@ local function StartAutoNecro()
 
     local function countGraves(graveStore)
         if not graveStore then return 0 end
-        local cnt=0
-        for k,v in pairs(graveStore:GetAttributes()) do
-            if type(k)=="string" and #k>20 then
-                local isDestroy=false
-                if type(v)=="table" then for _,elem in pairs(v) do if tostring(elem)=="Destroy" then isDestroy=true; break end end
-                elseif tostring(v):find("Destroy") then isDestroy=true end
-                if isDestroy then graveStore:SetAttribute(k,nil) else cnt+=1 end
+        local cnt = 0
+        for k, v in pairs(graveStore:GetAttributes()) do
+            if type(k) == "string" and #k > 20 then
+                local isDestroy = false
+                if type(v) == "table" then
+                    for _, elem in pairs(v) do
+                        if tostring(elem) == "Destroy" then isDestroy = true; break end
+                    end
+                elseif tostring(v):find("Destroy") then
+                    isDestroy = true
+                end
+                if not isDestroy then cnt += 1 end
             end
         end
         return cnt
